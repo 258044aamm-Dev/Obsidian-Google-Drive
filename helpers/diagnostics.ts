@@ -14,7 +14,8 @@ export type SyncPhase =
 	| 'root-folder'
 	| 'settings'
 	| 'auto-sync'
-	| 'fix-paths';
+	| 'fix-paths'
+	| 'reset';
 
 export interface DiagnosticEntry {
 	timestamp: number;
@@ -26,6 +27,8 @@ export interface DiagnosticEntry {
 	suggestedAction: string;
 	stack?: string;
 }
+
+const MAX_ENTRIES = 200;
 
 export class DiagnosticsManager {
 	private entries: DiagnosticEntry[] = [];
@@ -77,6 +80,9 @@ export class DiagnosticsManager {
 			suggestedAction: entry.suggestedAction ?? suggestedAction,
 			stack: entry.stack,
 		});
+		if (this.entries.length > MAX_ENTRIES) {
+			this.entries.splice(0, this.entries.length - MAX_ENTRIES);
+		}
 	}
 
 	get currentPhase(): SyncPhase | null {
@@ -148,9 +154,10 @@ export function sanitizeMessage(raw: unknown): string {
 
 export function maskPath(text: string): string {
 	return text.replace(
-		/\b([\w.@-]+(?:\/[\w.@-]+)+(\.\w+)?)\b/g,
+		/\b([\w.@-]+(?:[/\\][\w.@-]+)+(\.\w+)?)\b/g,
 		(fullMatch: string) => {
-			const parts = fullMatch.split('/');
+			const separator = fullMatch.includes('\\') ? '\\' : '/';
+			const parts = fullMatch.split(/[/\\]/);
 			return parts
 				.map((part, i) => {
 					if (i === parts.length - 1 && part.includes('.')) {
@@ -159,7 +166,7 @@ export function maskPath(text: string): string {
 					}
 					return '***';
 				})
-				.join('/');
+				.join(separator);
 		},
 	);
 }

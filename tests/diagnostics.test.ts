@@ -89,6 +89,38 @@ describe('maskPath', () => {
 		expect(result).not.toContain('my-notes');
 		expect(result).toContain('Error reading');
 	});
+
+	it('masks Windows backslash paths preserving drive letter and extension', () => {
+		const result = maskPath(
+			"ENOENT: no such file or directory, open 'C:\\Users\\25804\\styles.css'",
+		);
+		expect(result).toBe(
+			"ENOENT: no such file or directory, open 'C:\\***\\***\\***.css'",
+		);
+		expect(result).not.toContain('Users');
+		expect(result).not.toContain('25804');
+	});
+
+	it('masks Windows vault paths including folder names with spaces', () => {
+		const result = maskPath(
+			"ENOENT: no such file or directory, open 'C:\\Users\\25804\\OneDrive\\Documents\\So Nice\\Obs\\.obsidian\\plugins\\pdf-writer\\styles.css'",
+		);
+		expect(result).not.toContain('Users');
+		expect(result).not.toContain('25804');
+		expect(result).not.toContain('OneDrive');
+		expect(result).not.toContain('pdf-writer');
+		expect(result).not.toContain('.obsidian');
+		expect(result).toContain('.css');
+	});
+
+	it('keeps forward-slash masking byte-identical (golden values)', () => {
+		expect(maskPath('folder/note.md')).toBe('***/***.md');
+		expect(maskPath('a/b/c/d.txt')).toBe('***/***/***/***.txt');
+		expect(maskPath('Error reading my-notes/daily/2024.md from Drive')).toBe(
+			'Error reading ***/***/***.md from Drive',
+		);
+		expect(maskPath('This is not a path')).toBe('This is not a path');
+	});
 });
 
 describe('suggestAction', () => {
@@ -147,6 +179,18 @@ describe('DiagnosticsManager', () => {
 		const mgr = new DiagnosticsManager();
 		mgr.record({ message: 'test' });
 		expect(mgr.getEntries()).toHaveLength(0);
+	});
+
+	it('caps recorded entries at 200, dropping the oldest', () => {
+		const mgr = new DiagnosticsManager();
+		mgr.enabled = true;
+		for (let i = 0; i < 205; i++) {
+			mgr.record({ message: `entry ${i}` });
+		}
+		const entries = mgr.getEntries();
+		expect(entries).toHaveLength(200);
+		expect(entries[0]?.message).toBe('entry 5');
+		expect(entries.at(-1)?.message).toBe('entry 204');
 	});
 
 	it('withContext sets and restores phase', async () => {

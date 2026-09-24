@@ -1,6 +1,6 @@
 import type ObsidianGoogleDrive from '../main';
 import { Notice, requestUrl, RequestUrlResponse } from 'obsidian';
-import { sanitizeMessage } from './diagnostics';
+import { sanitizeMessage, suggestAction } from './diagnostics';
 
 interface RequestOptions {
 	body?: BodyInit;
@@ -99,19 +99,10 @@ export const getDriveAgent = (t: ObsidianGoogleDrive) => {
 					});
 					const phase = t.diagnostics.currentPhase;
 					const phaseLabel = phase ? `[${phase}] ` : '';
-					const { likelyCause, suggestedAction } = (() => {
-						const p = phase;
-						if (p === 'token-refresh') {
-							if (result.status === 401) return { likelyCause: 'Refresh token is invalid, expired, or revoked', suggestedAction: 'Obtain a new refresh token via plugin settings' };
-							if (result.status === 403) return { likelyCause: 'Token endpoint access forbidden', suggestedAction: 'Re-authenticate; the refresh token may have been revoked' };
-						}
-						if (result.status === 401) return { likelyCause: 'Authentication expired or invalid', suggestedAction: 'Re-authenticate via plugin settings' };
-						if (result.status === 403) return { likelyCause: 'Insufficient Google Drive permissions', suggestedAction: 'Re-authorize with full Drive access' };
-						if (result.status === 404) return { likelyCause: 'Resource not found on Google Drive', suggestedAction: 'File may have been deleted externally; retry sync' };
-						if (result.status === 429) return { likelyCause: 'Google API rate limit exceeded', suggestedAction: 'Wait a few minutes and retry' };
-						if (result.status >= 500) return { likelyCause: 'Google server error', suggestedAction: 'Retry later' };
-						return { likelyCause: `Request failed (HTTP ${result.status})`, suggestedAction: 'Check plugin configuration and retry' };
-					})();
+					const { likelyCause, suggestedAction } = suggestAction(
+						result.status,
+						phase,
+					);
 					new Notice(
 						`${phaseLabel}HTTP ${result.status} — ${likelyCause}. ${suggestedAction}`,
 						8000,

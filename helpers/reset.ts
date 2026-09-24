@@ -53,7 +53,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 	try {
 		if (!(await pull(t, true))) {
 			t.diagnostics.record({
-				phase: 'reset' as 'auto-sync',
+				phase: 'reset',
 				operation: 'pre-reset-pull',
 				message: 'Pull failed before reset could begin',
 			});

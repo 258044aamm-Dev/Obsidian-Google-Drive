@@ -290,6 +290,30 @@ describe('pull', () => {
 		);
 	});
 
+	it('does not create folders when pulling a root-level file', async () => {
+		const plugin = createPlugin();
+		plugin.drive.searchFiles.mockResolvedValueOnce([
+			{
+				id: 'root-note-id',
+				mimeType: 'text/markdown',
+				properties: { path: 'note.md' },
+				modifiedTime: '2025-01-01T00:00:00.000Z',
+			},
+		]);
+		plugin.drive.getFile.mockReturnValue({
+			arrayBuffer: vi.fn(async () => new ArrayBuffer(4)),
+		});
+
+		await expect(pull(plugin as never, true)).resolves.toBe(true);
+
+		expect(plugin.createFolder).not.toHaveBeenCalled();
+		expect(plugin.upsertFile).toHaveBeenCalledWith(
+			'note.md',
+			expect.any(ArrayBuffer),
+			'2025-01-01T00:00:00.000Z',
+		);
+	});
+
 	it('clears a pending delete operation for a recreated ancestor folder', async () => {
 		const plugin = createPlugin();
 		plugin.settings.driveIdToPath = { 'folder-id': 'Notes/New' };

@@ -117,12 +117,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 			id: 'export-diagnostics',
 			name: 'Copy sync diagnostics to clipboard',
 			callback: () => {
-				void navigator.clipboard.writeText(this.diagnostics.export());
-				new Notice(
-					this.diagnostics.getEntries().length
-						? 'Diagnostics copied to clipboard.'
-						: 'No diagnostic entries recorded.',
-				);
+				void this.copyDiagnosticsToClipboard();
 			},
 		});
 
@@ -443,6 +438,19 @@ export default class ObsidianGoogleDrive extends Plugin {
 		}
 	}
 
+	async copyDiagnosticsToClipboard(): Promise<void> {
+		if (!this.diagnostics.getEntries().length) {
+			new Notice('No diagnostic entries recorded.');
+			return;
+		}
+		try {
+			await navigator.clipboard.writeText(this.diagnostics.export());
+			new Notice('Diagnostics copied to clipboard.');
+		} catch {
+			new Notice('Could not copy diagnostics — clipboard unavailable.');
+		}
+	}
+
 	private formatLogEntries(entries: readonly DiagnosticEntry[]): string {
 		if (!entries.length) return '';
 		const first = entries[0]!;
@@ -712,10 +720,7 @@ class SettingsTab extends PluginSettingTab {
 						text: 'Copy to clipboard',
 					});
 					copyBtn.addEventListener('click', () => {
-						void navigator.clipboard.writeText(
-							this.plugin.diagnostics.export(),
-						);
-						new Notice('Diagnostics copied to clipboard.');
+						void this.plugin.copyDiagnosticsToClipboard();
 					});
 					const clearBtn = btns.createEl('button', { text: 'Clear' });
 					clearBtn.addEventListener('click', () => {

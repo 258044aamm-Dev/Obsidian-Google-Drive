@@ -180,7 +180,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 						? ''
 						: '&orderBy=name' +
 							(order === 'ascending' ? '' : ' desc')
-				}${pageToken ? '&pageToken=' + pageToken : ''}`,
+				}${pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''}`,
 			)
 			.json();
 		if (!files) return;

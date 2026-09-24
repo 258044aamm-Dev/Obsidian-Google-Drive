@@ -141,6 +141,39 @@ describe('Drive batch deletion', () => {
 	});
 });
 
+describe('Drive pagination', () => {
+	beforeEach(() => {
+		requestUrl.mockReset();
+		requestUrl.mockImplementation(
+			async ({ url }: { url?: string }) => {
+				const isSecondPage = (url ?? '').includes('pageToken=');
+				return {
+					status: 200,
+					headers: {},
+					arrayBuffer: new ArrayBuffer(0),
+					json: isSecondPage
+						? { files: [] }
+						: { nextPageToken: 'abc+/=', files: [] },
+					text: '',
+				};
+			},
+		);
+	});
+
+	it('URL-encodes page tokens when fetching subsequent pages', async () => {
+		const drive = getDriveClient(createPlugin());
+
+		await drive.searchFiles({ include: ['id'] });
+
+		const urls = requestUrl.mock.calls.map(
+			(call) => (call[0] as { url: string }).url,
+		);
+		expect(urls).toHaveLength(2);
+		expect(urls[1]).toContain('&pageToken=abc%2B%2F%3D');
+		expect(urls[1]).not.toContain('abc+/=');
+	});
+});
+
 describe('Drive root folder persistence', () => {
 	it('validates a persisted root once and then reuses it', async () => {
 		requestUrl.mockResolvedValue({

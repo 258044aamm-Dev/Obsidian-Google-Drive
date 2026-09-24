@@ -78,6 +78,8 @@ const createPlugin = () => {
 			getFile: vi.fn(),
 		},
 		abortSync: vi.fn(),
+		startSync: vi.fn(async () => ({ setMessage: vi.fn(), hide: vi.fn() })),
+		saveLog: vi.fn(async () => undefined),
 		endSync: vi.fn(async () => true),
 		createFolder: vi.fn(),
 		modifyFile: vi.fn(),
@@ -90,6 +92,7 @@ const createPlugin = () => {
 					fn(),
 			),
 			record: vi.fn(),
+			getEntries: vi.fn(() => []),
 		},
 	};
 };

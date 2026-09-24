@@ -52,6 +52,7 @@ const createPlugin = () =>
 					fn(),
 			),
 			record: vi.fn(),
+			getEntries: vi.fn(() => []),
 		},
 		debouncedSaveSettings: vi.fn(),
 		saveSettings: vi.fn(async () => undefined),

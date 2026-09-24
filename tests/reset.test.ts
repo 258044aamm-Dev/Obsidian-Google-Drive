@@ -137,6 +137,7 @@ describe('reset', () => {
 			modifyFile: vi.fn(async () => undefined),
 			createFile: vi.fn(async () => undefined),
 			createFolder: vi.fn(async () => undefined),
+			saveLog: vi.fn(async () => undefined),
 			diagnostics: {
 				enabled: false,
 				currentPhase: null,
@@ -145,6 +146,7 @@ describe('reset', () => {
 						fn(),
 				),
 				record: vi.fn(),
+				getEntries: vi.fn(() => []),
 			},
 		};
 

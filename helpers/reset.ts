@@ -208,6 +208,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 
 		if (!(await t.endSync(syncNotice))) return;
 
+		await t.saveLog(t.diagnostics.getEntries());
 		new Notice('Reset complete.');
 	} finally {
 		if (t.syncing) t.abortSync(syncNotice);

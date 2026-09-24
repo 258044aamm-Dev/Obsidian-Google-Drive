@@ -15,7 +15,7 @@ import {
 } from 'obsidian';
 import { fixDrivePath } from './helpers/fix_drive_path';
 import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
-import type { SyncPhase } from './helpers/diagnostics';
+import type { DiagnosticEntry, SyncPhase } from './helpers/diagnostics';
 
 interface PluginSettings {
 	refreshToken: string;
@@ -405,10 +405,88 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	abortSync(syncNotice?: Notice) {
+		void this.saveLog(this.diagnostics.getEntries());
 		this.ribbonIcon.removeClass('spin');
 		this.syncing = false;
 		syncNotice?.hide();
 		this.resumeAutoPushIfNeeded();
+	}
+
+	async saveLog(entries: readonly DiagnosticEntry[]): Promise<void> {
+		if (!entries.length) return;
+		try {
+			const logsDir = `${this.app.vault.configDir}/plugins/google-drive-sync/logs`;
+			const ts = new Date(entries[0]!.timestamp)
+				.toISOString()
+				.replace(/[-:]/g, '')
+				.replace('T', '-')
+				.replace(/\.\d+Z/, '');
+			const filePath = `${logsDir}/sync-log-${ts}.md`;
+			const content = new TextEncoder().encode(
+				this.formatLogEntries(entries),
+			);
+			await this.app.vault.adapter.writeBinary(
+				filePath,
+				content.buffer,
+				{ mtime: Date.now() },
+			);
+			void this.cleanupOldLogs(logsDir);
+		} catch (error) {
+			console.error('Failed to save sync log:', error);
+		}
+	}
+
+	private formatLogEntries(entries: readonly DiagnosticEntry[]): string {
+		if (!entries.length) return '';
+		const first = entries[0]!;
+		const date = new Date(first.timestamp)
+			.toISOString()
+			.replace('T', ' ')
+			.replace(/\.\d+Z$/, ' UTC');
+		const result = entries.some(
+			(e) => e.httpStatus || e.phase !== 'auto-sync',
+		)
+			? '⚠️ Issues detected'
+			: '✅ Clean sync';
+		let md = `# Sync Log — ${date}\n\n`;
+		md += '| | |\n|---|---|\n';
+		md += `| **Date** | ${date} |\n`;
+		md += `| **Result** | ${result} |\n`;
+		md += `| **Entries** | ${entries.length} |\n\n`;
+		for (const e of entries) {
+			const t = new Date(e.timestamp)
+				.toISOString()
+				.replace(/.*T/, '')
+				.replace(/\.\d+Z/, '');
+			md += `### ${t} — ${e.phase}/${e.operation}\n\n`;
+			md += `- **Message**: ${e.message}\n`;
+			if (e.httpStatus) md += `- **HTTP Status**: ${e.httpStatus}\n`;
+			md += `- **Likely cause**: ${e.likelyCause}\n`;
+			md += `- **Suggested action**: ${e.suggestedAction}\n`;
+			if (e.stack) {
+				md += `- **Stack trace**:\n\`\`\`\n`;
+				md += `${e.stack.split('\n').slice(0, 5).join('\n')}\n`;
+				md += '```\n';
+			}
+			md += '\n';
+		}
+		return md;
+	}
+
+	private async cleanupOldLogs(logsDir: string): Promise<void> {
+		try {
+			const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+			const listing = await this.app.vault.adapter.list(logsDir);
+			for (const file of listing.files) {
+				if (!file.endsWith('.md')) continue;
+				const stat = await this.app.vault.adapter.stat(file);
+				if (stat && stat.mtime < cutoff) {
+					await this.app.vault.adapter.remove(file);
+				}
+			}
+		} catch {
+			/* logs dir may not exist yet */
+		}
 	}
 }
 

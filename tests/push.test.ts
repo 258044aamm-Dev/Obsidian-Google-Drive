@@ -162,22 +162,24 @@ describe('push', () => {
 				changesToken: 'changes',
 			},
 			drive,
-			startSync: vi.fn(async () => syncNotice),
-			endSync: vi.fn(async () => {
-				plugin.syncing = false;
-				return true;
-			}),
-			abortSync: vi.fn(),
-			diagnostics: {
-				enabled: false,
-				currentPhase: null,
-				withContext: vi.fn(
-					async (_p: string, _o: string, fn: () => Promise<unknown>) =>
-						fn(),
-				),
-				record: vi.fn(),
-			},
-		};
+		startSync: vi.fn(async () => syncNotice),
+		endSync: vi.fn(async () => {
+			plugin.syncing = false;
+			return true;
+		}),
+		abortSync: vi.fn(),
+		saveLog: vi.fn(async () => undefined),
+		diagnostics: {
+			enabled: false,
+			currentPhase: null,
+			withContext: vi.fn(
+				async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+					fn(),
+			),
+			record: vi.fn(),
+			getEntries: vi.fn(() => []),
+		},
+	};
 
 		await push(plugin as never);
 
@@ -195,7 +197,8 @@ describe('push', () => {
 	});
 
 	it('shows the correct completion message after pushing', async () => {
-		const newFile = new TFile('new.md', { path: '' });
+		const newFile = new TFile();
+		Object.assign(newFile, { path: 'new.md', name: 'new.md', parent: { path: '' } });
 		const syncNotice = { setMessage: vi.fn(), hide: vi.fn() };
 		const drive = {
 			searchFiles: vi.fn(async () => []),
@@ -237,17 +240,19 @@ describe('push', () => {
 				plugin.syncing = false;
 				return true;
 			}),
-			abortSync: vi.fn(),
-			diagnostics: {
-				enabled: false,
-				currentPhase: null,
-				withContext: vi.fn(
-					async (_p: string, _o: string, fn: () => Promise<unknown>) =>
-						fn(),
-				),
-				record: vi.fn(),
-			},
-		};
+		abortSync: vi.fn(),
+		saveLog: vi.fn(async () => undefined),
+		diagnostics: {
+			enabled: false,
+			currentPhase: null,
+			withContext: vi.fn(
+				async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+					fn(),
+			),
+			record: vi.fn(),
+			getEntries: vi.fn(() => []),
+		},
+	};
 
 		const result = await push(plugin as never, true);
 

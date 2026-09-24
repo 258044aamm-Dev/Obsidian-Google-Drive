@@ -596,6 +596,7 @@ export const push = async (
 
 		if (!(await t.endSync(syncNotice, false))) return;
 
+		await t.saveLog(t.diagnostics.getEntries());
 		const totalFiles = creates.length + modifies.length;
 		new Notice(
 			`Push complete — ${totalFiles} file${totalFiles === 1 ? '' : 's'} synced.`,

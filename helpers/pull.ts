@@ -413,6 +413,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		).length;
 		const ended = await t.endSync(syncNotice);
 		if (ended) {
+			await t.saveLog(t.diagnostics.getEntries());
 			new Notice(
 				`Pull complete — ${syncedCount} file${syncedCount === 1 ? '' : 's'} synced.`,
 			);

@@ -1,5 +1,6 @@
 import type ObsidianGoogleDrive from '../main';
 import { Notice, requestUrl, RequestUrlResponse } from 'obsidian';
+import { sanitizeMessage, suggestAction } from './diagnostics';
 
 interface RequestOptions {
 	body?: BodyInit;
@@ -62,35 +63,68 @@ export const getDriveAgent = (t: ObsidianGoogleDrive) => {
 		options: RequestOptions = {},
 	) => {
 		const response = (async () => {
-			if (
-				t.accessToken.token &&
-				t.accessToken.expiresAt - Date.now() < 60_000
-			) {
-				await refreshAccessToken(t);
-			}
+			try {
+				if (
+					t.accessToken.token &&
+					t.accessToken.expiresAt - Date.now() < 60_000
+				) {
+					const refreshed = await refreshAccessToken(t);
+					if (!refreshed) {
+						throw new Error(
+							'Access token refresh failed; request aborted',
+						);
+					}
+				}
 
-			const { body, contentType } = await serializeBody(options);
-			const headers = { ...options.headers };
-			if (t.accessToken.token) {
-				headers.Authorization = `Bearer ${t.accessToken.token}`;
-			}
+				const { body, contentType } = await serializeBody(options);
+				const headers = { ...options.headers };
+				if (t.accessToken.token) {
+					headers.Authorization = `Bearer ${t.accessToken.token}`;
+				}
 
-			const result = await requestUrl({
-				url: new URL(path, 'https://www.googleapis.com/').toString(),
-				method,
-				headers,
-				body,
-				contentType,
-				throw: false,
-			});
+				const result = await requestUrl({
+					url: new URL(path, 'https://www.googleapis.com/').toString(),
+					method,
+					headers,
+					body,
+					contentType,
+					throw: false,
+				});
 
-			if (result.status < 200 || result.status >= 300) {
-				new Notice(`Error: ${result.text}`);
-				throw new Error(
-					`Request failed with status ${result.status}: ${result.text}`,
-				);
+				if (result.status < 200 || result.status >= 300) {
+					const sanitized = sanitizeMessage(result.text);
+					t.diagnostics.record({
+						httpStatus: result.status,
+						message: `HTTP ${result.status}: ${sanitized}`,
+					});
+					const phase = t.diagnostics.currentPhase;
+					const phaseLabel = phase ? `[${phase}] ` : '';
+					const { likelyCause, suggestedAction } = suggestAction(
+						result.status,
+						phase,
+					);
+					new Notice(
+						`${phaseLabel}HTTP ${result.status} — ${likelyCause}. ${suggestedAction}`,
+						8000,
+					);
+					throw new Error(
+						`Request failed with status ${result.status}: ${sanitized}`,
+					);
+				}
+				return toDriveResponse(result);
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message.includes('Request failed with status')
+				) {
+					throw error;
+				}
+				t.diagnostics.record({
+					message: sanitizeMessage(error),
+					stack: error instanceof Error ? error.stack : undefined,
+				});
+				throw error;
 			}
-			return toDriveResponse(result);
 		})();
 
 		return {
@@ -155,6 +189,12 @@ export const refreshAccessToken = async (
 			console.error(
 				`Refresh token rejected (HTTP ${response.status}): ${response.text}`,
 			);
+			t.diagnostics.record({
+				phase: 'token-refresh',
+				operation: 'refresh-access-token',
+				httpStatus: response.status,
+				message: `Token endpoint rejected the request (HTTP ${response.status})`,
+			});
 			new Notice(
 				'Your refresh token was rejected. Please add a new refresh token and try again.',
 				0,
@@ -163,6 +203,12 @@ export const refreshAccessToken = async (
 		}
 
 		if (response.status < 200 || response.status >= 300) {
+			t.diagnostics.record({
+				phase: 'token-refresh',
+				operation: 'refresh-access-token',
+				httpStatus: response.status,
+				message: `Token endpoint returned HTTP ${response.status}`,
+			});
 			new Notice(
 				`Could not refresh your access token (HTTP ${response.status}). Your refresh token was kept; please try again.`,
 			);
@@ -179,7 +225,13 @@ export const refreshAccessToken = async (
 			expiresAt: Date.now() + expires_in * 1000,
 		};
 		return t.accessToken;
-	} catch {
+	} catch (error) {
+		t.diagnostics.record({
+			phase: 'token-refresh',
+			operation: 'refresh-access-token',
+			message: sanitizeMessage(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		new Notice(
 			'Could not refresh your access token. Your refresh token was kept; check your connection and try again.',
 		);

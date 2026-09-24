@@ -78,10 +78,22 @@ const createPlugin = () => {
 			getFile: vi.fn(),
 		},
 		abortSync: vi.fn(),
+		startSync: vi.fn(async () => ({ setMessage: vi.fn(), hide: vi.fn() })),
+		saveLog: vi.fn(async () => undefined),
 		endSync: vi.fn(async () => true),
 		createFolder: vi.fn(),
 		modifyFile: vi.fn(),
 		upsertFile: vi.fn(),
+		diagnostics: {
+			enabled: false,
+			currentPhase: null,
+			withContext: vi.fn(
+				async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+					fn(),
+			),
+			record: vi.fn(),
+			getEntries: vi.fn(() => []),
+		},
 	};
 };
 
@@ -99,13 +111,25 @@ describe('pull', () => {
 		expect(plugin.abortSync).not.toHaveBeenCalled();
 	});
 
-	it('aborts when Drive files cannot be listed', async () => {
+	it('leaves cleanup to the caller when a silent pull cannot list Drive files', async () => {
 		const plugin = createPlugin();
 		plugin.drive.searchFiles.mockResolvedValueOnce(undefined);
 
 		await expect(pull(plugin as never, true)).resolves.toBe(false);
 
+		expect(plugin.abortSync).not.toHaveBeenCalled();
+	});
+
+	it('aborts a user-initiated pull when Drive files cannot be listed', async () => {
+		const plugin = createPlugin();
+		const syncNotice = { setMessage: vi.fn(), hide: vi.fn() };
+		plugin.startSync = vi.fn(async () => syncNotice);
+		plugin.drive.searchFiles.mockResolvedValueOnce(undefined);
+
+		await expect(pull(plugin as never)).resolves.toBe(false);
+
 		expect(plugin.abortSync).toHaveBeenCalledOnce();
+		expect(plugin.abortSync).toHaveBeenCalledWith(syncNotice);
 	});
 
 	it('reconciles creates, deletes, and renames made while Obsidian was closed', async () => {
@@ -227,5 +251,134 @@ describe('pull', () => {
 			'folder-id': 'remote',
 			'note-id': 'remote/note.md',
 		});
+	});
+
+	it('creates missing ancestor folders for pulled files even when the Drive folder is stale', async () => {
+		const plugin = createPlugin();
+		plugin.drive.searchFiles.mockResolvedValueOnce([
+			{
+				id: 'manifest-id',
+				mimeType: 'application/json',
+				properties: { path: 'config/plugins/pdf-writer/manifest.json' },
+				modifiedTime: '2025-01-01T00:00:00.000Z',
+			},
+			{
+				id: 'main-id',
+				mimeType: 'text/javascript',
+				properties: { path: 'config/plugins/pdf-writer/main.js' },
+				modifiedTime: '2025-01-01T00:00:00.000Z',
+			},
+		]);
+		plugin.drive.getFile.mockReturnValue({
+			arrayBuffer: vi.fn(async () => new ArrayBuffer(4)),
+		});
+
+		await expect(pull(plugin as never, true)).resolves.toBe(true);
+
+		expect(plugin.createFolder).toHaveBeenCalledWith(
+			'config/plugins/pdf-writer',
+		);
+		expect(plugin.upsertFile).toHaveBeenCalledWith(
+			'config/plugins/pdf-writer/manifest.json',
+			expect.any(ArrayBuffer),
+			'2025-01-01T00:00:00.000Z',
+		);
+		expect(plugin.upsertFile).toHaveBeenCalledWith(
+			'config/plugins/pdf-writer/main.js',
+			expect.any(ArrayBuffer),
+			'2025-01-01T00:00:00.000Z',
+		);
+	});
+
+	it('does not create folders when pulling a root-level file', async () => {
+		const plugin = createPlugin();
+		plugin.drive.searchFiles.mockResolvedValueOnce([
+			{
+				id: 'root-note-id',
+				mimeType: 'text/markdown',
+				properties: { path: 'note.md' },
+				modifiedTime: '2025-01-01T00:00:00.000Z',
+			},
+		]);
+		plugin.drive.getFile.mockReturnValue({
+			arrayBuffer: vi.fn(async () => new ArrayBuffer(4)),
+		});
+
+		await expect(pull(plugin as never, true)).resolves.toBe(true);
+
+		expect(plugin.createFolder).not.toHaveBeenCalled();
+		expect(plugin.upsertFile).toHaveBeenCalledWith(
+			'note.md',
+			expect.any(ArrayBuffer),
+			'2025-01-01T00:00:00.000Z',
+		);
+	});
+
+	it('clears a pending delete operation for a recreated ancestor folder', async () => {
+		const plugin = createPlugin();
+		plugin.settings.driveIdToPath = { 'folder-id': 'Notes/New' };
+		plugin.drive.searchFiles.mockResolvedValueOnce([
+			{
+				id: 'file-id',
+				mimeType: 'text/markdown',
+				properties: { path: 'Notes/New/note.md' },
+				modifiedTime: '2025-01-01T00:00:00.000Z',
+			},
+		]);
+		plugin.drive.getFile.mockReturnValue({
+			arrayBuffer: vi.fn(async () => new ArrayBuffer(4)),
+		});
+
+		await expect(pull(plugin as never, true)).resolves.toBe(true);
+
+		expect(plugin.settings.operations).not.toHaveProperty('Notes/New');
+		expect(plugin.createFolder).toHaveBeenCalledWith('Notes');
+		expect(plugin.createFolder).toHaveBeenCalledWith('Notes/New');
+		expect(plugin.upsertFile).toHaveBeenCalledWith(
+			'Notes/New/note.md',
+			expect.any(ArrayBuffer),
+			'2025-01-01T00:00:00.000Z',
+		);
+	});
+
+	it('shows the correct completion message after syncing files', async () => {
+		const syncNotice = { setMessage: vi.fn(), hide: vi.fn() };
+		const plugin = createPlugin();
+		plugin.startSync = vi.fn(async () => syncNotice);
+		plugin.drive.searchFiles
+			.mockResolvedValueOnce([
+				{
+					id: 'file-id',
+					mimeType: 'text/markdown',
+					properties: { path: 'note.md' },
+					modifiedTime: '2025-01-01T00:00:00.000Z',
+				},
+			])
+			.mockResolvedValueOnce([]);
+		plugin.drive.getChanges.mockResolvedValueOnce([]);
+		plugin.drive.getFile.mockReturnValue({
+			arrayBuffer: vi.fn(async () => new ArrayBuffer(4)),
+		});
+
+		const result = await pull(plugin as never, false);
+
+		expect(result).toBe(true);
+		expect(notices).toContainEqual(
+			expect.stringContaining('Pull complete — 1 file synced'),
+		);
+	});
+
+	it('shows the correct message when there are no changes to pull', async () => {
+		const syncNotice = { setMessage: vi.fn(), hide: vi.fn() };
+		const plugin = createPlugin();
+		plugin.startSync = vi.fn(async () => syncNotice);
+		plugin.settings.lastSyncedAt = Date.now();
+
+		const result = await pull(plugin as never, false);
+
+		expect(result).toBe(true);
+		expect(notices).toContainEqual(
+			expect.stringContaining('Pull complete — already up to date'),
+		);
 	});
 });

@@ -137,6 +137,17 @@ describe('reset', () => {
 			modifyFile: vi.fn(async () => undefined),
 			createFile: vi.fn(async () => undefined),
 			createFolder: vi.fn(async () => undefined),
+			saveLog: vi.fn(async () => undefined),
+			diagnostics: {
+				enabled: false,
+				currentPhase: null,
+				withContext: vi.fn(
+					async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+						fn(),
+				),
+				record: vi.fn(),
+				getEntries: vi.fn(() => []),
+			},
 		};
 
 		await reset(plugin as never);

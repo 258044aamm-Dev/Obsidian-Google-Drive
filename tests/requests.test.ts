@@ -33,6 +33,14 @@ const createPlugin = () => ({
 		accessTokenUrl: 'https://tokens.example.com/access',
 	},
 	saveSettings: vi.fn(async () => undefined),
+	diagnostics: {
+		enabled: false,
+		currentPhase: null,
+		withContext: vi.fn(
+			async (_p: string, _o: string, fn: () => Promise<unknown>) => fn(),
+		),
+		record: vi.fn(),
+	},
 });
 
 describe('refreshAccessToken', () => {
@@ -168,5 +176,21 @@ describe('getDriveAgent', () => {
 				throw: false,
 			}),
 		);
+	});
+
+	it('notifies with the canonical cause and action for server errors', async () => {
+		mocks.requestUrl.mockResolvedValue(response(503));
+		const plugin = createPlugin();
+		plugin.accessToken = {
+			token: 'access-token',
+			expiresAt: Date.now() + 3_600_000,
+		};
+
+		await expect(
+			getDriveAgent(plugin as never).get('drive/v3/files').json(),
+		).rejects.toThrow('Request failed with status 503');
+
+		expect(mocks.notices.at(-1)).toContain('Google service unavailable');
+		expect(mocks.notices.at(-1)).toContain('Retry after a few minutes');
 	});
 });

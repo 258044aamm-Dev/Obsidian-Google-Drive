@@ -27,6 +27,10 @@ vi.mock('obsidian', () => {
 	};
 });
 
+vi.mock('../helpers/requests', () => ({
+	refreshAccessToken: vi.fn(async () => ({ token: 'token', expiresAt: Date.now() + 3_600_000 })),
+}));
+
 import { TFile } from 'obsidian';
 import ObsidianGoogleDrive from '../main';
 
@@ -41,6 +45,21 @@ const createPlugin = () =>
 			rootFolderId: '',
 			lastSyncedAt: 0,
 			changesToken: 'old-token',
+			enableDiagnostics: false,
+			maskFilePaths: true,
+			lastInstalledVersion: '',
+		},
+		manifest: { version: '3.0.0' },
+		accessToken: { token: '', expiresAt: 0 },
+		diagnostics: {
+			enabled: false,
+			currentPhase: null,
+			withContext: vi.fn(
+				async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+					fn(),
+			),
+			record: vi.fn(),
+			getEntries: vi.fn(() => []),
 		},
 		debouncedSaveSettings: vi.fn(),
 		saveSettings: vi.fn(async () => undefined),
@@ -49,6 +68,7 @@ const createPlugin = () =>
 			removeClass: vi.fn(),
 		},
 		drive: {
+			searchFiles: vi.fn(async () => []),
 			getConfigFilesToSync: vi.fn(async () => []),
 			getChangesStartToken: vi.fn(async () => 'new-token'),
 		},
@@ -147,5 +167,100 @@ describe('ObsidianGoogleDrive sync lifecycle', () => {
 		expect(plugin.settings.changesToken).toBe('old-token');
 		expect(plugin.saveSettings).not.toHaveBeenCalled();
 		expect(plugin.syncing).toBe(false);
+	});
+});
+
+describe('compareVersions', () => {
+	it('returns 0 for equal versions', () => {
+		const plugin = createPlugin();
+		expect(plugin.compareVersions('3.0.0', '3.0.0')).toBe(0);
+	});
+
+	it('returns negative when first version is lower', () => {
+		const plugin = createPlugin();
+		expect(plugin.compareVersions('2.5.0', '3.0.0')).toBeLessThan(0);
+	});
+
+	it('returns positive when first version is higher', () => {
+		const plugin = createPlugin();
+		expect(plugin.compareVersions('3.1.0', '3.0.0')).toBeGreaterThan(0);
+	});
+});
+
+describe('checkAndMigrate', () => {
+	it('migrates when previous version is empty and driveIdToPath has entries', async () => {
+		const plugin = createPlugin();
+		plugin.settings.driveIdToPath = { 'old-id': 'old-path.md' };
+		(plugin.drive.searchFiles as ReturnType<typeof vi.fn>) = vi.fn(async () => [
+			{ id: 'new-id', properties: { path: 'new-path.md' } },
+		]);
+
+		await plugin.checkAndMigrate();
+
+		expect(plugin.drive.searchFiles).toHaveBeenCalled();
+		expect(plugin.settings.driveIdToPath).toEqual({
+			'new-id': 'new-path.md',
+		});
+		expect(plugin.settings.lastInstalledVersion).toBe('3.0.0');
+	});
+
+	it('migrates when previous version is below 3.0.0', async () => {
+		const plugin = createPlugin();
+		plugin.settings.lastInstalledVersion = '2.5.0';
+		(plugin.drive.searchFiles as ReturnType<typeof vi.fn>) = vi.fn(async () => [
+			{ id: 'id1', properties: { path: 'file.md' } },
+		]);
+
+		await plugin.checkAndMigrate();
+
+		expect(plugin.drive.searchFiles).toHaveBeenCalled();
+		expect(plugin.settings.lastInstalledVersion).toBe('3.0.0');
+	});
+
+	it('skips migration when previous version is empty and driveIdToPath is empty', async () => {
+		const plugin = createPlugin();
+		plugin.drive.searchFiles = vi.fn(async () => []);
+
+		await plugin.checkAndMigrate();
+
+		expect(plugin.drive.searchFiles).not.toHaveBeenCalled();
+		expect(plugin.settings.lastInstalledVersion).toBe('3.0.0');
+	});
+
+	it('skips migration when previous version is 3.0.0 or higher', async () => {
+		const plugin = createPlugin();
+		plugin.settings.lastInstalledVersion = '3.0.0';
+		plugin.drive.searchFiles = vi.fn(async () => []);
+
+		await plugin.checkAndMigrate();
+
+		expect(plugin.drive.searchFiles).not.toHaveBeenCalled();
+		expect(plugin.settings.lastInstalledVersion).toBe('3.0.0');
+	});
+
+	it('does not save lastInstalledVersion when migration fails', async () => {
+		const plugin = createPlugin();
+		plugin.settings.lastInstalledVersion = '2.0.0';
+		plugin.drive.searchFiles = vi.fn(async () => undefined);
+
+		await plugin.checkAndMigrate();
+
+		expect(plugin.settings.lastInstalledVersion).toBe('2.0.0');
+	});
+
+	it('preserves operations during migration', async () => {
+		const plugin = createPlugin();
+		plugin.settings.lastInstalledVersion = '2.0.0';
+		plugin.settings.operations = { 'pending.md': 'create' };
+		(plugin.drive.searchFiles as ReturnType<typeof vi.fn>) = vi.fn(async () => [
+			{ id: 'id1', properties: { path: 'file.md' } },
+		]);
+
+		await plugin.checkAndMigrate();
+
+		expect(plugin.settings.operations).toEqual({ 'pending.md': 'create' });
+		expect(plugin.settings.driveIdToPath).toEqual({
+			id1: 'file.md',
+		});
 	});
 });

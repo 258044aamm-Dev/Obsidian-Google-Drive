@@ -3,11 +3,19 @@ import ObsidianGoogleDrive from '../main';
 import { unSplitPath } from './drive';
 
 export const fixDrivePath = async (t: ObsidianGoogleDrive) => {
-	const driveFiles = await t.drive.searchFiles({
-		include: ['id', 'properties'],
-	});
+	const driveFiles = await t.diagnostics.withContext(
+		'fix-paths',
+		'search-all-files',
+		() =>
+			t.drive.searchFiles({
+				include: ['id', 'properties'],
+			}),
+	);
 	if (!driveFiles) {
-		new Notice('An error occurred fetching Google Drive files.');
+		new Notice(
+			'[fix paths] failed to fetch drive files. Check diagnostics.',
+			8000,
+		);
 		return;
 	}
 	const idToPath = Object.fromEntries(
@@ -15,6 +23,7 @@ export const fixDrivePath = async (t: ObsidianGoogleDrive) => {
 	);
 	t.settings.driveIdToPath = idToPath;
 	t.settings.operations = {};
+	await t.saveSettings();
 	new Notice(
 		'Google Drive paths have been fixed. Please restart the plugin to apply changes.',
 	);

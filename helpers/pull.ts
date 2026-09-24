@@ -5,45 +5,61 @@ import {
 	FileMetadata,
 	folderMimeType,
 	foldersToBatches,
-	getSyncMessage,
 	unSplitPath,
 } from './drive';
 import { refreshAccessToken } from './requests';
+import type { SyncPhase } from './diagnostics';
+import { sanitizeMessage } from './diagnostics';
 
 export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 	let syncNotice = undefined;
 
 	if (!silenceNotices) {
 		if (t.syncing) return;
-		syncNotice = await t.startSync();
+		syncNotice = await t.startSync('Pulling from Google Drive');
 	}
+
+	let lastPhase: SyncPhase = 'auto-sync';
+
 	try {
 		const { vault } = t.app;
 		const adapter = vault.adapter;
 
+		lastPhase = 'token-refresh';
 		if (!t.accessToken.token) {
 			if (!(await refreshAccessToken(t))) {
 				new Notice(
-					'Failed to refresh access token. Please re-authenticate.',
+					'Pull failed: authentication error. Re-authenticate in plugin settings.',
+					8000,
 				);
-				t.abortSync(syncNotice);
+				if (!silenceNotices) t.abortSync(syncNotice);
 				return false;
 			}
 		}
 
-		const recentlyModified = await t.drive.searchFiles({
-			include: ['id', 'modifiedTime', 'properties', 'mimeType'],
-			matches: [
-				{
-					modifiedTime: {
-						gt: new Date(t.settings.lastSyncedAt).toISOString(),
-					},
-				},
-			],
-		});
+		const recentlyModified = await t.diagnostics.withContext(
+			'list-files',
+			'search-recently-modified',
+			async () => {
+				lastPhase = 'list-files';
+				return t.drive.searchFiles({
+					include: ['id', 'modifiedTime', 'properties', 'mimeType'],
+					matches: [
+						{
+							modifiedTime: {
+								gt: new Date(t.settings.lastSyncedAt).toISOString(),
+							},
+						},
+					],
+				});
+			},
+		);
 		if (!recentlyModified) {
-			new Notice('An error occurred fetching Google Drive files.');
-			t.abortSync(syncNotice);
+			new Notice(
+				'Pull failed: could not list drive files. Check diagnostics.',
+				8000,
+			);
+			if (!silenceNotices) t.abortSync(syncNotice);
 			return false;
 		}
 
@@ -98,10 +114,20 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			}
 		});
 
-		const changes = await t.drive.getChanges(t.settings.changesToken);
+		const changes = await t.diagnostics.withContext(
+			'fetch-changes',
+			'get-changes',
+			async () => {
+				lastPhase = 'fetch-changes';
+				return t.drive.getChanges(t.settings.changesToken);
+			},
+		);
 		if (!changes) {
-			new Notice('An error occurred fetching Google Drive changes.');
-			t.abortSync(syncNotice);
+			new Notice(
+				'Pull failed: could not fetch drive changes. Check diagnostics.',
+				8000,
+			);
+			if (!silenceNotices) t.abortSync(syncNotice);
 			return false;
 		}
 		const removedPaths = Object.fromEntries(
@@ -132,7 +158,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		if (!recentlyModified.length && !deletions.length) {
 			if (silenceNotices) return true;
 			const ended = await t.endSync(syncNotice);
-			if (ended) new Notice("You're up to date!");
+			if (ended) new Notice('Pull complete — already up to date.');
 			return ended;
 		}
 
@@ -191,19 +217,45 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			]);
 		};
 
-		await deleteFiles();
+		await t.diagnostics.withContext('delete', 'delete-local-files', async () => {
+			lastPhase = 'delete';
+			await deleteFiles();
+		});
 
-		syncNotice?.setMessage('Syncing (33%)');
+		syncNotice?.setMessage(
+			`Pulling... ${deletions.filter(Boolean).length} files removed`,
+		);
 
 		const upsertFiles = async () => {
 			const newFolders = recentlyModified.filter(
 				({ mimeType }) => mimeType === folderMimeType,
 			);
 
-			if (newFolders.length) {
-				const batches = foldersToBatches(
-					newFolders.map(({ properties }) => unSplitPath(properties)),
-				);
+			const newNotes = recentlyModified.filter(
+				({ mimeType }) => mimeType !== folderMimeType,
+			);
+
+			// A Drive folder's modifiedTime is not refreshed when its children
+			// change, so a folder can look stale relative to the files inside
+			// it. Pre-create every ancestor folder of a pulled file so the
+			// writes below never target a missing local directory (ENOENT).
+			const ancestorFolders = new Set<string>();
+			for (const file of newNotes) {
+				const segments = unSplitPath(file.properties).split('/');
+				for (let i = 1; i < segments.length; i++) {
+					ancestorFolders.add(segments.slice(0, i).join('/'));
+				}
+			}
+
+			const foldersToEnsure = [
+				...new Set([
+					...ancestorFolders,
+					...newFolders.map(({ properties }) => unSplitPath(properties)),
+				]),
+			];
+
+			if (foldersToEnsure.length) {
+				const batches = foldersToBatches(foldersToEnsure);
 
 				for (const batch of batches) {
 					await Promise.all(
@@ -222,10 +274,6 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			}
 
 			let completed = 0;
-
-			const newNotes = recentlyModified.filter(
-				({ mimeType }) => mimeType !== folderMimeType,
-			);
 
 			await batchAsync(
 				newNotes.map((file: FileMetadata) => async () => {
@@ -251,7 +299,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 						.arrayBuffer();
 
 					syncNotice?.setMessage(
-						getSyncMessage(33, 100, completed, newNotes.length),
+						`Pulling... downloading ${completed}/${newNotes.length} files`,
 					);
 
 					if (localFile instanceof TFile) {
@@ -267,7 +315,14 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			);
 		};
 
-		await upsertFiles();
+		await t.diagnostics.withContext(
+			'download',
+			'download-and-write-files',
+			async () => {
+				lastPhase = 'download';
+				await upsertFiles();
+			},
+		);
 
 		const deleteConfigs = async () => {
 			const configDeletions = await Promise.all(
@@ -370,12 +425,33 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 
 		if (silenceNotices) return true;
 
+		const syncedCount = recentlyModified.filter(
+			({ mimeType }) => mimeType !== folderMimeType,
+		).length;
 		const ended = await t.endSync(syncNotice);
-		if (ended) new Notice('Files have been synced from Google Drive!');
+		if (ended) {
+			await t.saveLog(t.diagnostics.getEntries());
+			new Notice(
+				`Pull complete — ${syncedCount} file${syncedCount === 1 ? '' : 's'} synced.`,
+			);
+		}
 		return ended;
 	} catch (error) {
-		t.abortSync(syncNotice);
-		new Notice('Sync failed unexpectedly. Please try again.');
+		t.diagnostics.record({
+			phase: lastPhase,
+			operation: 'pull-unknown',
+			message: sanitizeMessage(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
+		// Silent pulls are nested inside push/reset/startup, which own the
+		// progress notice and the syncing flag — leave cleanup to the caller.
+		if (!silenceNotices) {
+			t.abortSync(syncNotice);
+			new Notice(
+				`Pull failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
+				8000,
+			);
+		}
 		console.error('Google Drive pull failed', error);
 		return false;
 	}

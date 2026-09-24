@@ -20,6 +20,15 @@ const createPlugin = () =>
 		app: { vault: { getName: () => 'Test vault' } },
 		settings: { refreshToken: 'refresh-token', rootFolderId: '' },
 		saveSettings: vi.fn(async () => undefined),
+		diagnostics: {
+			enabled: false,
+			currentPhase: null,
+			withContext: vi.fn(
+				async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+					fn(),
+			),
+			record: vi.fn(),
+		},
 	}) as never;
 
 describe('Drive path properties', () => {
@@ -129,6 +138,39 @@ describe('Drive batch deletion', () => {
 		await expect(
 			drive.batchDelete(['file-1', 'missing-file']),
 		).resolves.toBeUndefined();
+	});
+});
+
+describe('Drive pagination', () => {
+	beforeEach(() => {
+		requestUrl.mockReset();
+		requestUrl.mockImplementation(
+			async ({ url }: { url?: string }) => {
+				const isSecondPage = (url ?? '').includes('pageToken=');
+				return {
+					status: 200,
+					headers: {},
+					arrayBuffer: new ArrayBuffer(0),
+					json: isSecondPage
+						? { files: [] }
+						: { nextPageToken: 'abc+/=', files: [] },
+					text: '',
+				};
+			},
+		);
+	});
+
+	it('URL-encodes page tokens when fetching subsequent pages', async () => {
+		const drive = getDriveClient(createPlugin());
+
+		await drive.searchFiles({ include: ['id'] });
+
+		const urls = requestUrl.mock.calls.map(
+			(call) => (call[0] as { url: string }).url,
+		);
+		expect(urls).toHaveLength(2);
+		expect(urls[1]).toContain('&pageToken=abc%2B%2F%3D');
+		expect(urls[1]).not.toContain('abc+/=');
 	});
 });
 

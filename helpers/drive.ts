@@ -180,7 +180,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 						? ''
 						: '&orderBy=name' +
 							(order === 'ascending' ? '' : ' desc')
-				}${pageToken ? '&pageToken=' + pageToken : ''}`,
+				}${pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''}`,
 			)
 			.json();
 		if (!files) return;
@@ -451,6 +451,15 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 				statuses.length !== batch.length ||
 				statuses.some((status) => status < 200 || status >= 300)
 			) {
+				const failedCount = statuses.filter(
+					(s) => s < 200 || s >= 300,
+				).length;
+				t.diagnostics.record({
+					phase: 'batch-delete',
+					operation: 'batch-delete-files',
+					httpStatus: statuses.find((s) => s < 200 || s >= 300),
+					message: `${failedCount} of ${batch.length} batch deletes failed (statuses: ${statuses.join(', ')})`,
+				});
 				return;
 			}
 		}

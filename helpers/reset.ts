@@ -3,7 +3,6 @@ import {
 	batchAsync,
 	folderMimeType,
 	foldersToBatches,
-	getSyncMessage,
 	splitPath,
 	unSplitPath,
 } from './drive';
@@ -50,9 +49,20 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 	});
 	if (!proceed) return;
 
-	const syncNotice = await t.startSync();
+	const syncNotice = await t.startSync('Resetting from Google Drive');
 	try {
-		if (!(await pull(t, true))) return;
+		if (!(await pull(t, true))) {
+			t.diagnostics.record({
+				phase: 'reset',
+				operation: 'pre-reset-pull',
+				message: 'Pull failed before reset could begin',
+			});
+			new Notice(
+				'Reset aborted: could not sync before resetting. Check diagnostics.',
+				8000,
+			);
+			return;
+		}
 
 		const { vault } = t.app;
 
@@ -76,51 +86,66 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 			);
 		}
 
-		syncNotice.setMessage('Syncing (33%)');
+		syncNotice.setMessage('Resetting... restoring local files');
 
 		if (modifies.length) {
-			let completed = 0;
-			const files = modifies.map(([path]) =>
-				vault.getFileByPath(path),
-			) as TFile[];
-			await batchAsync(
-				files.map((file) => async () => {
-					const [onlineFile, metadata] = await Promise.all([
-						t.drive
-							.getFile(filePathToId[file.path] as string)
-							.arrayBuffer(),
-						t.drive.getFileMetadata(
-							filePathToId[file.path] as string,
-						),
-					]);
-					if (!onlineFile || !metadata) {
-						return new Notice(
-							'An error occurred fetching Google Drive files.',
-						);
-					}
+			await t.diagnostics.withContext(
+				'download',
+				'reset-download-modifies',
+				async () => {
+					let completed = 0;
+					const files = modifies.map(([path]) =>
+						vault.getFileByPath(path),
+					) as TFile[];
+					await batchAsync(
+						files.map((file) => async () => {
+							const [onlineFile, metadata] = await Promise.all([
+								t.drive
+									.getFile(filePathToId[file.path] as string)
+									.arrayBuffer(),
+								t.drive.getFileMetadata(
+									filePathToId[file.path] as string,
+								),
+							]);
+						if (!onlineFile || !metadata) {
+							return new Notice(
+								'Reset failed: could not download file from drive. Check diagnostics.',
+								8000,
+							);
+						}
 
-					completed++;
-					syncNotice.setMessage(
-						getSyncMessage(33, 66, completed, files.length),
+						completed++;
+						syncNotice.setMessage(
+							`Resetting... downloading ${completed}/${files.length} files`,
+						);
+							return t.modifyFile(
+								file,
+								onlineFile,
+								metadata.modifiedTime,
+							);
+						}),
 					);
-					return t.modifyFile(
-						file,
-						onlineFile,
-						metadata.modifiedTime,
-					);
-				}),
+				},
 			);
 		}
 
 		if (deletes.length) {
-			const files = await t.drive.searchFiles({
-				include: ['id', 'mimeType', 'properties', 'modifiedTime'],
-				matches: deletes.map(([path]) => ({
-					properties: splitPath(path),
-				})),
-			});
-			if (!files) {
-				new Notice('An error occurred fetching Google Drive files.');
+			const files = await t.diagnostics.withContext(
+				'list-files',
+				'reset-search-deletes',
+				() =>
+					t.drive.searchFiles({
+						include: ['id', 'mimeType', 'properties', 'modifiedTime'],
+						matches: deletes.map(([path]) => ({
+							properties: splitPath(path),
+						})),
+					}),
+			);
+		if (!files) {
+			new Notice(
+				'Reset failed: could not search drive files. Check diagnostics.',
+				8000,
+			);
 				return;
 			}
 
@@ -150,33 +175,40 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 				([path]) => pathToFile[path]?.mimeType !== folderMimeType,
 			);
 
-			await batchAsync(
-				deletedFiles.map(([path]) => async () => {
-					const onlineFile = await t.drive
-						.getFile(filePathToId[path] as string)
-						.arrayBuffer();
+		await t.diagnostics.withContext(
+			'download',
+			'reset-download-restores',
+			() =>
+				batchAsync(
+					deletedFiles.map(([path]) => async () => {
+						const onlineFile = await t.drive
+							.getFile(filePathToId[path] as string)
+							.arrayBuffer();
 					if (!onlineFile) {
 						return new Notice(
-							'An error occurred fetching Google Drive files.',
+							'Reset failed: could not download file from drive. Check diagnostics.',
+							8000,
 						);
 					}
 					completed++;
 					syncNotice.setMessage(
-						getSyncMessage(66, 99, completed, deletedFiles.length),
+						`Resetting... restoring ${completed}/${deletedFiles.length} files`,
 					);
-					return t.createFile(
-						path,
-						onlineFile,
-						pathToFile[path]?.modifiedTime,
-					);
-				}),
-			);
+						return t.createFile(
+							path,
+							onlineFile,
+							pathToFile[path]?.modifiedTime,
+						);
+					}),
+				),
+		);
 		}
 
 		t.settings.operations = {};
 
 		if (!(await t.endSync(syncNotice))) return;
 
+		await t.saveLog(t.diagnostics.getEntries());
 		new Notice('Reset complete.');
 	} finally {
 		if (t.syncing) t.abortSync(syncNotice);

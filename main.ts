@@ -1,4 +1,4 @@
-import { checkConnection, getDriveClient } from './helpers/drive';
+import { checkConnection, getDriveClient, unSplitPath } from './helpers/drive';
 import { refreshAccessToken } from './helpers/requests';
 import { pull } from './helpers/pull';
 import { push } from './helpers/push';
@@ -30,6 +30,7 @@ interface PluginSettings {
 	changesToken: string;
 	enableDiagnostics: boolean;
 	maskFilePaths: boolean;
+	lastInstalledVersion: string;
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -45,6 +46,7 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	changesToken: '',
 	enableDiagnostics: false,
 	maskFilePaths: true,
+	lastInstalledVersion: '',
 };
 
 export default class ObsidianGoogleDrive extends Plugin {
@@ -75,6 +77,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 			);
 			return;
 		}
+
+		await this.checkAndMigrate();
 
 		this.ribbonIcon = this.addRibbonIcon(
 			'refresh-cw',
@@ -487,6 +491,74 @@ export default class ObsidianGoogleDrive extends Plugin {
 		} catch {
 			/* logs dir may not exist yet */
 		}
+	}
+
+	compareVersions(a: string, b: string): number {
+		const pa = a.split('.').map(Number);
+		const pb = b.split('.').map(Number);
+		for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+			const na = pa[i] || 0;
+			const nb = pb[i] || 0;
+			if (na !== nb) return na - nb;
+		}
+		return 0;
+	}
+
+	private async runPathMigration(): Promise<boolean> {
+		try {
+			if (!this.accessToken.token) {
+				if (!(await refreshAccessToken(this))) {
+					return false;
+				}
+			}
+			const driveFiles = await this.drive.searchFiles({
+				include: ['id', 'properties'],
+			});
+			if (!driveFiles) return false;
+			const idToPath = Object.fromEntries(
+				driveFiles.map(({ id, properties }) => [
+					id,
+					unSplitPath(properties),
+				]),
+			);
+			this.settings.driveIdToPath = idToPath;
+			await this.saveSettings();
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	async checkAndMigrate(): Promise<void> {
+		const prevVersion = this.settings.lastInstalledVersion;
+		const currentVersion = this.manifest.version;
+
+		if (
+			prevVersion === '' &&
+			Object.keys(this.settings.driveIdToPath).length > 0
+		) {
+			const migrated = await this.runPathMigration();
+			if (migrated) {
+				this.settings.lastInstalledVersion = currentVersion;
+				await this.saveSettings();
+			}
+			return;
+		}
+
+		if (
+			prevVersion !== '' &&
+			this.compareVersions(prevVersion, '3.0.0') < 0
+		) {
+			const migrated = await this.runPathMigration();
+			if (migrated) {
+				this.settings.lastInstalledVersion = currentVersion;
+				await this.saveSettings();
+			}
+			return;
+		}
+
+		this.settings.lastInstalledVersion = currentVersion;
+		await this.saveSettings();
 	}
 }
 

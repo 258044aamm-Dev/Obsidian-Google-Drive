@@ -32,7 +32,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 					'Pull failed: authentication error. Re-authenticate in plugin settings.',
 					8000,
 				);
-				t.abortSync(syncNotice);
+				if (!silenceNotices) t.abortSync(syncNotice);
 				return false;
 			}
 		}
@@ -59,7 +59,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 				'Pull failed: could not list drive files. Check diagnostics.',
 				8000,
 			);
-			t.abortSync(syncNotice);
+			if (!silenceNotices) t.abortSync(syncNotice);
 			return false;
 		}
 
@@ -127,7 +127,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 				'Pull failed: could not fetch drive changes. Check diagnostics.',
 				8000,
 			);
-			t.abortSync(syncNotice);
+			if (!silenceNotices) t.abortSync(syncNotice);
 			return false;
 		}
 		const removedPaths = Object.fromEntries(
@@ -231,10 +231,31 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 				({ mimeType }) => mimeType === folderMimeType,
 			);
 
-			if (newFolders.length) {
-				const batches = foldersToBatches(
-					newFolders.map(({ properties }) => unSplitPath(properties)),
-				);
+			const newNotes = recentlyModified.filter(
+				({ mimeType }) => mimeType !== folderMimeType,
+			);
+
+			// A Drive folder's modifiedTime is not refreshed when its children
+			// change, so a folder can look stale relative to the files inside
+			// it. Pre-create every ancestor folder of a pulled file so the
+			// writes below never target a missing local directory (ENOENT).
+			const ancestorFolders = new Set<string>();
+			for (const file of newNotes) {
+				const segments = unSplitPath(file.properties).split('/');
+				for (let i = 1; i < segments.length; i++) {
+					ancestorFolders.add(segments.slice(0, i).join('/'));
+				}
+			}
+
+			const foldersToEnsure = [
+				...new Set([
+					...ancestorFolders,
+					...newFolders.map(({ properties }) => unSplitPath(properties)),
+				]),
+			];
+
+			if (foldersToEnsure.length) {
+				const batches = foldersToBatches(foldersToEnsure);
 
 				for (const batch of batches) {
 					await Promise.all(
@@ -253,10 +274,6 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			}
 
 			let completed = 0;
-
-			const newNotes = recentlyModified.filter(
-				({ mimeType }) => mimeType !== folderMimeType,
-			);
 
 			await batchAsync(
 				newNotes.map((file: FileMetadata) => async () => {
@@ -426,7 +443,9 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			message: sanitizeMessage(error),
 			stack: error instanceof Error ? error.stack : undefined,
 		});
-		t.abortSync(syncNotice);
+		// Silent pulls are nested inside push/reset/startup, which own the
+		// progress notice and the syncing flag — leave cleanup to the caller.
+		if (!silenceNotices) t.abortSync(syncNotice);
 		new Notice(
 			`Pull failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
 			8000,

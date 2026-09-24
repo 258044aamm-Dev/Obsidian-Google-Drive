@@ -111,13 +111,25 @@ describe('pull', () => {
 		expect(plugin.abortSync).not.toHaveBeenCalled();
 	});
 
-	it('aborts when Drive files cannot be listed', async () => {
+	it('leaves cleanup to the caller when a silent pull cannot list Drive files', async () => {
 		const plugin = createPlugin();
 		plugin.drive.searchFiles.mockResolvedValueOnce(undefined);
 
 		await expect(pull(plugin as never, true)).resolves.toBe(false);
 
+		expect(plugin.abortSync).not.toHaveBeenCalled();
+	});
+
+	it('aborts a user-initiated pull when Drive files cannot be listed', async () => {
+		const plugin = createPlugin();
+		const syncNotice = { setMessage: vi.fn(), hide: vi.fn() };
+		plugin.startSync = vi.fn(async () => syncNotice);
+		plugin.drive.searchFiles.mockResolvedValueOnce(undefined);
+
+		await expect(pull(plugin as never)).resolves.toBe(false);
+
 		expect(plugin.abortSync).toHaveBeenCalledOnce();
+		expect(plugin.abortSync).toHaveBeenCalledWith(syncNotice);
 	});
 
 	it('reconciles creates, deletes, and renames made while Obsidian was closed', async () => {
@@ -239,6 +251,70 @@ describe('pull', () => {
 			'folder-id': 'remote',
 			'note-id': 'remote/note.md',
 		});
+	});
+
+	it('creates missing ancestor folders for pulled files even when the Drive folder is stale', async () => {
+		const plugin = createPlugin();
+		plugin.drive.searchFiles.mockResolvedValueOnce([
+			{
+				id: 'manifest-id',
+				mimeType: 'application/json',
+				properties: { path: 'config/plugins/pdf-writer/manifest.json' },
+				modifiedTime: '2025-01-01T00:00:00.000Z',
+			},
+			{
+				id: 'main-id',
+				mimeType: 'text/javascript',
+				properties: { path: 'config/plugins/pdf-writer/main.js' },
+				modifiedTime: '2025-01-01T00:00:00.000Z',
+			},
+		]);
+		plugin.drive.getFile.mockReturnValue({
+			arrayBuffer: vi.fn(async () => new ArrayBuffer(4)),
+		});
+
+		await expect(pull(plugin as never, true)).resolves.toBe(true);
+
+		expect(plugin.createFolder).toHaveBeenCalledWith(
+			'config/plugins/pdf-writer',
+		);
+		expect(plugin.upsertFile).toHaveBeenCalledWith(
+			'config/plugins/pdf-writer/manifest.json',
+			expect.any(ArrayBuffer),
+			'2025-01-01T00:00:00.000Z',
+		);
+		expect(plugin.upsertFile).toHaveBeenCalledWith(
+			'config/plugins/pdf-writer/main.js',
+			expect.any(ArrayBuffer),
+			'2025-01-01T00:00:00.000Z',
+		);
+	});
+
+	it('clears a pending delete operation for a recreated ancestor folder', async () => {
+		const plugin = createPlugin();
+		plugin.settings.driveIdToPath = { 'folder-id': 'Notes/New' };
+		plugin.drive.searchFiles.mockResolvedValueOnce([
+			{
+				id: 'file-id',
+				mimeType: 'text/markdown',
+				properties: { path: 'Notes/New/note.md' },
+				modifiedTime: '2025-01-01T00:00:00.000Z',
+			},
+		]);
+		plugin.drive.getFile.mockReturnValue({
+			arrayBuffer: vi.fn(async () => new ArrayBuffer(4)),
+		});
+
+		await expect(pull(plugin as never, true)).resolves.toBe(true);
+
+		expect(plugin.settings.operations).not.toHaveProperty('Notes/New');
+		expect(plugin.createFolder).toHaveBeenCalledWith('Notes');
+		expect(plugin.createFolder).toHaveBeenCalledWith('Notes/New');
+		expect(plugin.upsertFile).toHaveBeenCalledWith(
+			'Notes/New/note.md',
+			expect.any(ArrayBuffer),
+			'2025-01-01T00:00:00.000Z',
+		);
 	});
 
 	it('shows the correct completion message after syncing files', async () => {

@@ -420,6 +420,9 @@ export default class ObsidianGoogleDrive extends Plugin {
 		if (!entries.length) return;
 		try {
 			const logsDir = `${this.app.vault.configDir}/plugins/google-drive-sync/logs`;
+			if (!(await this.app.vault.adapter.exists(logsDir))) {
+				await this.app.vault.adapter.mkdir(logsDir);
+			}
 			const ts = new Date(entries[0]!.timestamp)
 				.toISOString()
 				.replace(/[-:]/g, '')

@@ -445,11 +445,13 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		});
 		// Silent pulls are nested inside push/reset/startup, which own the
 		// progress notice and the syncing flag — leave cleanup to the caller.
-		if (!silenceNotices) t.abortSync(syncNotice);
-		new Notice(
-			`Pull failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
-			8000,
-		);
+		if (!silenceNotices) {
+			t.abortSync(syncNotice);
+			new Notice(
+				`Pull failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
+				8000,
+			);
+		}
 		console.error('Google Drive pull failed', error);
 		return false;
 	}

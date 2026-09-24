@@ -32,6 +32,7 @@ describe('fixDrivePath', () => {
 		]);
 		const plugin = {
 			drive: { searchFiles },
+			saveSettings: vi.fn(async () => undefined),
 			settings: {
 				driveIdToPath: { stale: 'old/path.md' },
 				operations: { 'pending.md': 'create' },
@@ -65,6 +66,7 @@ describe('fixDrivePath', () => {
 			'split-path-id': 'long/folder/nested/note.md',
 		});
 		expect(plugin.settings.operations).toEqual({});
+		expect(plugin.saveSettings).toHaveBeenCalled();
 		expect(notice).toHaveBeenCalledWith(
 			'Google Drive paths have been fixed. Please restart the plugin to apply changes.',
 		);

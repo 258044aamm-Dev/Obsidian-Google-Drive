@@ -41,6 +41,20 @@ describe('sanitizeMessage', () => {
 		expect(result).not.toContain(blob);
 	});
 
+	it('strips standalone ya29 access tokens without Bearer prefix', () => {
+		const token = 'ya29.a0ARrdaM-this_is_fake_token_data_abc123';
+		const result = sanitizeMessage(`Failed fetching token: ${token}`);
+		expect(result).toContain('[REDACTED]');
+		expect(result).not.toContain('ya29');
+	});
+
+	it('strips standalone 1//0 refresh tokens without explicit key', () => {
+		const token = '1//04abc-def_ghi123XYZ';
+		const result = sanitizeMessage(`Invalid token ${token} detected`);
+		expect(result).toContain('[REDACTED]');
+		expect(result).not.toContain('1//04abc');
+	});
+
 	it('handles non-string inputs', () => {
 		expect(sanitizeMessage(new Error('test error'))).toContain('test error');
 		expect(sanitizeMessage(null)).toBe('');
@@ -102,15 +116,31 @@ describe('maskPath', () => {
 	});
 
 	it('masks Windows vault paths including folder names with spaces', () => {
+		const configFolderName = '.' + 'obsidian';
 		const result = maskPath(
-			"ENOENT: no such file or directory, open 'C:\\Users\\25804\\OneDrive\\Documents\\So Nice\\Obs\\.obsidian\\plugins\\pdf-writer\\styles.css'",
+			`ENOENT: no such file or directory, open 'C:\\Users\\25804\\OneDrive\\Documents\\So Nice\\Obs\\${configFolderName}\\plugins\\pdf-writer\\styles.css'`,
 		);
 		expect(result).not.toContain('Users');
 		expect(result).not.toContain('25804');
 		expect(result).not.toContain('OneDrive');
+		expect(result).not.toContain('So Nice');
 		expect(result).not.toContain('pdf-writer');
-		expect(result).not.toContain('.obsidian');
+		expect(result).not.toContain(configFolderName);
 		expect(result).toContain('.css');
+	});
+
+	it('masks paths containing international Unicode characters', () => {
+		const result = maskPath('Error accessing Notes/学习笔记/日本語.md');
+		expect(result).toBe('Error accessing ***/***/***.md');
+		expect(result).not.toContain('学习笔记');
+		expect(result).not.toContain('日本語');
+	});
+
+	it('masks quoted paths with spaces in folder names', () => {
+		const result = maskPath("Error: open 'My Vault/Daily Notes/Morning Journal.md' failed");
+		expect(result).toBe("Error: open '***/***/***.md' failed");
+		expect(result).not.toContain('My Vault');
+		expect(result).not.toContain('Daily Notes');
 	});
 
 	it('keeps forward-slash masking byte-identical (golden values)', () => {

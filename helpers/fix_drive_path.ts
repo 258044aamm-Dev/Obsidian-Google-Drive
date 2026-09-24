@@ -23,6 +23,7 @@ export const fixDrivePath = async (t: ObsidianGoogleDrive) => {
 	);
 	t.settings.driveIdToPath = idToPath;
 	t.settings.operations = {};
+	await t.saveSettings();
 	new Notice(
 		'Google Drive paths have been fixed. Please restart the plugin to apply changes.',
 	);

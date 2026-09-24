@@ -78,8 +78,6 @@ export default class ObsidianGoogleDrive extends Plugin {
 			return;
 		}
 
-		await this.checkAndMigrate();
-
 		this.ribbonIcon = this.addRibbonIcon(
 			'refresh-cw',
 			'Push to Google Drive',
@@ -148,6 +146,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 					});
 					return;
 				}
+
+				await this.checkAndMigrate();
 
 				this.syncing = true;
 				this.ribbonIcon.addClass('spin');
@@ -418,19 +418,15 @@ export default class ObsidianGoogleDrive extends Plugin {
 			if (!(await this.app.vault.adapter.exists(logsDir))) {
 				await this.app.vault.adapter.mkdir(logsDir);
 			}
-			const ts = new Date(entries[0]!.timestamp)
+			const ts = new Date()
 				.toISOString()
 				.replace(/[-:]/g, '')
 				.replace('T', '-')
 				.replace(/\.\d+Z/, '');
 			const filePath = `${logsDir}/sync-log-${ts}.md`;
-			const content = new TextEncoder().encode(
-				this.formatLogEntries(entries),
-			);
-			await this.app.vault.adapter.writeBinary(
+			await this.app.vault.adapter.write(
 				filePath,
-				content.buffer,
-				{ mtime: Date.now() },
+				this.formatLogEntries(entries),
 			);
 			void this.cleanupOldLogs(logsDir);
 		} catch (error) {

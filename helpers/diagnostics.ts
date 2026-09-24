@@ -147,28 +147,57 @@ export function sanitizeMessage(raw: unknown): string {
 		(_, key: string) => `${key}=[REDACTED]`,
 	);
 
+	msg = msg.replace(/\bya29\.[A-Za-z0-9\-._~+/]+/g, '[REDACTED]');
+	msg = msg.replace(/\b1\/\/0[A-Za-z0-9\-._~+/]+/g, '[REDACTED]');
 	msg = msg.replace(/[A-Za-z0-9+/]{50,}={0,2}/g, '[REDACTED]');
 
 	return msg;
 }
 
 export function maskPath(text: string): string {
-	return text.replace(
-		/\b([\w.@-]+(?:[/\\][\w.@-]+)+(\.\w+)?)\b/g,
-		(fullMatch: string) => {
-			const separator = fullMatch.includes('\\') ? '\\' : '/';
-			const parts = fullMatch.split(/[/\\]/);
-			return parts
-				.map((part, i) => {
+	// 1. Quoted paths (single, double, or backtick quotes): can contain spaces and Unicode
+	let result = text.replace(
+		/(["'`])(([a-zA-Z]:[/\\]|[/\\])?(?:[\p{L}\p{N}._@~-]+(?: +[\p{L}\p{N}._@~-]+)*[/\\])+([\p{L}\p{N}._@~-]+(?: +[\p{L}\p{N}._@~-]+)*)?)\1/gu,
+		(_match: string, quote: string, path: string): string => {
+			const sep = path.includes('\\') ? '\\' : '/';
+			const driveMatch = path.match(/^([a-zA-Z]:[/\\]|[/\\])/);
+			const drive = driveMatch ? driveMatch[0] : '';
+			const rest = path.slice(drive.length);
+			const parts = rest.split(/[/\\]/);
+			const masked = parts
+				.map((part: string, i: number): string => {
 					if (i === parts.length - 1 && part.includes('.')) {
-						const ext = part.split('.').pop();
-						return `***.${ext}`;
+						return `***.${part.split('.').pop()}`;
 					}
 					return '***';
 				})
-				.join(separator);
+				.join(sep);
+			return `${quote}${drive}${masked}${quote}`;
 		},
 	);
+
+	// 2. Unquoted paths: word-bounded, supports Unicode
+	result = result.replace(
+		/\b(([a-zA-Z]:[/\\])?(?:[\p{L}\p{N}._@~-]+[/\\])+([\p{L}\p{N}._@~-]+\.[\p{L}\p{N}]+)?)\b/gu,
+		(match: string): string => {
+			const sep = match.includes('\\') ? '\\' : '/';
+			const driveMatch = match.match(/^([a-zA-Z]:[/\\])/);
+			const drive = driveMatch ? driveMatch[0] : '';
+			const rest = match.slice(drive.length);
+			const parts = rest.split(/[/\\]/);
+			const masked = parts
+				.map((part: string, i: number): string => {
+					if (i === parts.length - 1 && part.includes('.')) {
+						return `***.${part.split('.').pop()}`;
+					}
+					return '***';
+				})
+				.join(sep);
+			return `${drive}${masked}`;
+		},
+	);
+
+	return result;
 }
 
 const PHASE_CAUSE_OVERRIDES: Partial<

@@ -57,6 +57,7 @@ import { DiagnosticsManager } from '../helpers/diagnostics';
 
 const createPlugin = () => {
 	const mkdir = vi.fn(async (_path: string) => undefined);
+	const write = vi.fn(async (_path: string, _data: string) => undefined);
 	const writeBinary = vi.fn(
 		async (
 			_path: string,
@@ -67,6 +68,7 @@ const createPlugin = () => {
 	const adapter = {
 		exists: vi.fn(async () => false),
 		mkdir,
+		write,
 		writeBinary,
 		readBinary: vi.fn(async () => new ArrayBuffer(0)),
 		stat: vi.fn(async () => undefined),
@@ -117,7 +119,7 @@ const createPlugin = () => {
 			getChanges: ReturnType<typeof vi.fn>;
 		};
 	};
-	return { plugin, mkdir, writeBinary };
+	return { plugin, mkdir, write, writeBinary };
 };
 
 describe('sync lifecycle regression tests', () => {
@@ -141,7 +143,6 @@ describe('sync lifecycle regression tests', () => {
 
 		const visible = createdNotices.filter((n) => !n.hidden).map((n) => n.message);
 		expect(visible).toEqual([
-			'Pull failed during list-files. Use "Copy diagnostics" for details.',
 			'Push aborted: could not sync before pushing. Check diagnostics.',
 		]);
 		expect(plugin.syncing).toBe(false);
@@ -169,7 +170,7 @@ describe('sync lifecycle regression tests', () => {
 	});
 
 	it('creates the logs directory before saving a sync log', async () => {
-		const { plugin, mkdir, writeBinary } = createPlugin();
+		const { plugin, mkdir, write } = createPlugin();
 		plugin.diagnostics.enabled = true;
 		plugin.diagnostics.record({
 			phase: 'download',
@@ -183,8 +184,8 @@ describe('sync lifecycle regression tests', () => {
 		expect(mkdir).toHaveBeenCalledWith(
 			'config/plugins/google-drive-sync/logs',
 		);
-		expect(writeBinary).toHaveBeenCalledTimes(1);
-		const loggedPath = writeBinary.mock.calls[0]?.[0];
+		expect(write).toHaveBeenCalledTimes(1);
+		const loggedPath = write.mock.calls[0]?.[0];
 		expect(loggedPath).toContain('sync-log-');
 		expect(loggedPath?.endsWith('.md')).toBe(true);
 	});

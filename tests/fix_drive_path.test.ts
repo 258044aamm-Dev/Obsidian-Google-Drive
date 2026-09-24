@@ -36,10 +36,27 @@ describe('fixDrivePath', () => {
 				driveIdToPath: { stale: 'old/path.md' },
 				operations: { 'pending.md': 'create' },
 			},
+			diagnostics: {
+				enabled: false,
+				currentPhase: null,
+				withContext: vi.fn(
+					async (
+						_p: string,
+						_o: string,
+						fn: () => Promise<unknown>,
+					) => fn(),
+				),
+				record: vi.fn(),
+			},
 		};
 
 		await fixDrivePath(plugin as never);
 
+		expect(plugin.diagnostics.withContext).toHaveBeenCalledWith(
+			'fix-paths',
+			'search-all-files',
+			expect.any(Function),
+		);
 		expect(searchFiles).toHaveBeenCalledWith({
 			include: ['id', 'properties'],
 		});
@@ -59,6 +76,18 @@ describe('fixDrivePath', () => {
 		const plugin = {
 			drive: { searchFiles: vi.fn(async () => undefined) },
 			settings: { driveIdToPath, operations },
+			diagnostics: {
+				enabled: false,
+				currentPhase: null,
+				withContext: vi.fn(
+					async (
+						_p: string,
+						_o: string,
+						fn: () => Promise<unknown>,
+					) => fn(),
+				),
+				record: vi.fn(),
+			},
 		};
 
 		await fixDrivePath(plugin as never);
@@ -66,7 +95,8 @@ describe('fixDrivePath', () => {
 		expect(plugin.settings.driveIdToPath).toBe(driveIdToPath);
 		expect(plugin.settings.operations).toBe(operations);
 		expect(notice).toHaveBeenCalledWith(
-			'An error occurred fetching Google Drive files.',
+			'[fix paths] failed to fetch drive files. Check diagnostics.',
+			8000,
 		);
 	});
 });

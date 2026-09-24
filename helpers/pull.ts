@@ -9,6 +9,8 @@ import {
 	unSplitPath,
 } from './drive';
 import { refreshAccessToken } from './requests';
+import type { SyncPhase } from './diagnostics';
+import { sanitizeMessage } from './diagnostics';
 
 export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 	let syncNotice = undefined;
@@ -17,32 +19,47 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		if (t.syncing) return;
 		syncNotice = await t.startSync();
 	}
+
+	let lastPhase: SyncPhase = 'auto-sync';
+
 	try {
 		const { vault } = t.app;
 		const adapter = vault.adapter;
 
+		lastPhase = 'token-refresh';
 		if (!t.accessToken.token) {
 			if (!(await refreshAccessToken(t))) {
 				new Notice(
-					'Failed to refresh access token. Please re-authenticate.',
+					'[pull] authentication failed. Re-authenticate in plugin settings.',
+					8000,
 				);
 				t.abortSync(syncNotice);
 				return false;
 			}
 		}
 
-		const recentlyModified = await t.drive.searchFiles({
-			include: ['id', 'modifiedTime', 'properties', 'mimeType'],
-			matches: [
-				{
-					modifiedTime: {
-						gt: new Date(t.settings.lastSyncedAt).toISOString(),
-					},
-				},
-			],
-		});
+		const recentlyModified = await t.diagnostics.withContext(
+			'list-files',
+			'search-recently-modified',
+			async () => {
+				lastPhase = 'list-files';
+				return t.drive.searchFiles({
+					include: ['id', 'modifiedTime', 'properties', 'mimeType'],
+					matches: [
+						{
+							modifiedTime: {
+								gt: new Date(t.settings.lastSyncedAt).toISOString(),
+							},
+						},
+					],
+				});
+			},
+		);
 		if (!recentlyModified) {
-			new Notice('An error occurred fetching Google Drive files.');
+			new Notice(
+				'[pull] failed to list drive files. Check diagnostics for details.',
+				8000,
+			);
 			t.abortSync(syncNotice);
 			return false;
 		}
@@ -98,9 +115,19 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			}
 		});
 
-		const changes = await t.drive.getChanges(t.settings.changesToken);
+		const changes = await t.diagnostics.withContext(
+			'fetch-changes',
+			'get-changes',
+			async () => {
+				lastPhase = 'fetch-changes';
+				return t.drive.getChanges(t.settings.changesToken);
+			},
+		);
 		if (!changes) {
-			new Notice('An error occurred fetching Google Drive changes.');
+			new Notice(
+				'[pull] failed to fetch drive changes. Check diagnostics for details.',
+				8000,
+			);
 			t.abortSync(syncNotice);
 			return false;
 		}
@@ -191,7 +218,10 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			]);
 		};
 
-		await deleteFiles();
+		await t.diagnostics.withContext('delete', 'delete-local-files', async () => {
+			lastPhase = 'delete';
+			await deleteFiles();
+		});
 
 		syncNotice?.setMessage('Syncing (33%)');
 
@@ -267,7 +297,14 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			);
 		};
 
-		await upsertFiles();
+		await t.diagnostics.withContext(
+			'download',
+			'download-and-write-files',
+			async () => {
+				lastPhase = 'download';
+				await upsertFiles();
+			},
+		);
 
 		const deleteConfigs = async () => {
 			const configDeletions = await Promise.all(
@@ -374,8 +411,17 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		if (ended) new Notice('Files have been synced from Google Drive!');
 		return ended;
 	} catch (error) {
+		t.diagnostics.record({
+			phase: lastPhase,
+			operation: 'pull-unknown',
+			message: sanitizeMessage(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		t.abortSync(syncNotice);
-		new Notice('Sync failed unexpectedly. Please try again.');
+		new Notice(
+			`[pull] sync failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
+			8000,
+		);
 		console.error('Google Drive pull failed', error);
 		return false;
 	}

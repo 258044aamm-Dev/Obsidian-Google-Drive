@@ -14,6 +14,8 @@ import {
 	TFile,
 } from 'obsidian';
 import { fixDrivePath } from './helpers/fix_drive_path';
+import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
+import type { SyncPhase } from './helpers/diagnostics';
 
 interface PluginSettings {
 	refreshToken: string;
@@ -26,6 +28,8 @@ interface PluginSettings {
 	rootFolderId: string;
 	lastSyncedAt: number;
 	changesToken: string;
+	enableDiagnostics: boolean;
+	maskFilePaths: boolean;
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -39,10 +43,13 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	rootFolderId: '',
 	lastSyncedAt: 0,
 	changesToken: '',
+	enableDiagnostics: false,
+	maskFilePaths: true,
 };
 
 export default class ObsidianGoogleDrive extends Plugin {
 	settings!: PluginSettings;
+	diagnostics = new DiagnosticsManager();
 	accessToken = {
 		token: '',
 		expiresAt: 0,
@@ -56,6 +63,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 		const { vault } = this.app;
 
 		await this.loadSettings();
+		this.diagnostics.enabled = this.settings.enableDiagnostics;
+		this.diagnostics.maskPaths = this.settings.maskFilePaths;
 
 		this.addSettingTab(new SettingsTab(this.app, this));
 
@@ -100,6 +109,19 @@ export default class ObsidianGoogleDrive extends Plugin {
 			callback: () => fixDrivePath(this),
 		});
 
+		this.addCommand({
+			id: 'export-diagnostics',
+			name: 'Copy sync diagnostics to clipboard',
+			callback: () => {
+				void navigator.clipboard.writeText(this.diagnostics.export());
+				new Notice(
+					this.diagnostics.getEntries().length
+						? 'Diagnostics copied to clipboard.'
+						: 'No diagnostic entries recorded.',
+				);
+			},
+		});
+
 		this.registerEvent(
 			this.app.workspace.on('quit', () => this.saveSettings()),
 		);
@@ -119,12 +141,45 @@ export default class ObsidianGoogleDrive extends Plugin {
 			);
 
 			void checkConnection().then(async (connected) => {
-				if (!connected) return;
+				if (!connected) {
+					this.diagnostics.record({
+						phase: 'auto-sync',
+						operation: 'check-connection-on-startup',
+						message: 'No internet connection at startup',
+					});
+					return;
+				}
 
 				this.syncing = true;
 				this.ribbonIcon.addClass('spin');
+				let autoSyncPhase: SyncPhase = 'auto-sync';
 				try {
-					if (await pull(this, true)) await this.endSync();
+					autoSyncPhase = 'download';
+					if (await pull(this, true)) {
+						autoSyncPhase = 'start-token';
+						await this.endSync();
+					} else {
+						this.diagnostics.record({
+							phase: 'auto-sync',
+							operation: 'initial-pull',
+							message: 'Automatic sync on startup failed (see earlier entries)',
+						});
+						new Notice(
+							'Automatic sync failed. Try syncing manually or check diagnostics.',
+							8000,
+						);
+					}
+				} catch (error) {
+					this.diagnostics.record({
+						phase: autoSyncPhase,
+						operation: 'auto-sync-error',
+						message: sanitizeMessage(error),
+						stack: error instanceof Error ? error.stack : undefined,
+					});
+					new Notice(
+						'Automatic sync encountered an error. Check diagnostics.',
+						8000,
+					);
 				} finally {
 					if (this.syncing) this.abortSync();
 				}
@@ -471,6 +526,52 @@ class SettingsTab extends PluginSettingTab {
 					placeholder: 'Client secret',
 				},
 			},
+			{
+				name: 'Enable diagnostic logging',
+				desc: 'Record detailed error information when sync fails. Stored locally only — never sent automatically.',
+				control: {
+					type: 'toggle',
+					key: 'enableDiagnostics',
+					defaultValue: false,
+				},
+			},
+			{
+				name: 'Mask file paths in diagnostics',
+				desc: 'Replace file path segments with *** for privacy. Disable if you need paths for debugging.',
+				control: {
+					type: 'toggle',
+					key: 'maskFilePaths',
+					defaultValue: true,
+				},
+			},
+			{
+				name: 'Diagnostics',
+				render: (setting) => {
+					setting.settingEl.empty();
+					const count = this.plugin.diagnostics.getEntries().length;
+					setting.setName(
+						`Diagnostics (${count} ${count === 1 ? 'entry' : 'entries'})`,
+					);
+					const btns = setting.settingEl.createDiv({
+						cls: 'setting-item-control',
+					});
+					const copyBtn = btns.createEl('button', {
+						text: 'Copy to clipboard',
+					});
+					copyBtn.addEventListener('click', () => {
+						void navigator.clipboard.writeText(
+							this.plugin.diagnostics.export(),
+						);
+						new Notice('Diagnostics copied to clipboard.');
+					});
+					const clearBtn = btns.createEl('button', { text: 'Clear' });
+					clearBtn.addEventListener('click', () => {
+						this.plugin.diagnostics.clear();
+						new Notice('Diagnostics cleared.');
+						this.update();
+					});
+				},
+			},
 		];
 	}
 
@@ -479,6 +580,12 @@ class SettingsTab extends PluginSettingTab {
 		if (key === 'autoPush') {
 			if (value) this.plugin.resumeAutoPushIfNeeded();
 			else this.plugin.clearAutoPushTimer();
+		}
+		if (key === 'enableDiagnostics') {
+			this.plugin.diagnostics.enabled = value as boolean;
+		}
+		if (key === 'maskFilePaths') {
+			this.plugin.diagnostics.maskPaths = value as boolean;
 		}
 	}
 }

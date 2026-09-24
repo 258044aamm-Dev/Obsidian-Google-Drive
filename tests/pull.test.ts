@@ -82,6 +82,15 @@ const createPlugin = () => {
 		createFolder: vi.fn(),
 		modifyFile: vi.fn(),
 		upsertFile: vi.fn(),
+		diagnostics: {
+			enabled: false,
+			currentPhase: null,
+			withContext: vi.fn(
+				async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+					fn(),
+			),
+			record: vi.fn(),
+		},
 	};
 };
 

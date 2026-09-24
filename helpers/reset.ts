@@ -52,7 +52,18 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 
 	const syncNotice = await t.startSync();
 	try {
-		if (!(await pull(t, true))) return;
+		if (!(await pull(t, true))) {
+			t.diagnostics.record({
+				phase: 'reset' as 'auto-sync',
+				operation: 'pre-reset-pull',
+				message: 'Pull failed before reset could begin',
+			});
+			new Notice(
+				'[reset] aborted — pull failed first. Check diagnostics.',
+				8000,
+			);
+			return;
+		}
 
 		const { vault } = t.app;
 
@@ -79,48 +90,63 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 		syncNotice.setMessage('Syncing (33%)');
 
 		if (modifies.length) {
-			let completed = 0;
-			const files = modifies.map(([path]) =>
-				vault.getFileByPath(path),
-			) as TFile[];
-			await batchAsync(
-				files.map((file) => async () => {
-					const [onlineFile, metadata] = await Promise.all([
-						t.drive
-							.getFile(filePathToId[file.path] as string)
-							.arrayBuffer(),
-						t.drive.getFileMetadata(
-							filePathToId[file.path] as string,
-						),
-					]);
-					if (!onlineFile || !metadata) {
-						return new Notice(
-							'An error occurred fetching Google Drive files.',
-						);
-					}
+			await t.diagnostics.withContext(
+				'download',
+				'reset-download-modifies',
+				async () => {
+					let completed = 0;
+					const files = modifies.map(([path]) =>
+						vault.getFileByPath(path),
+					) as TFile[];
+					await batchAsync(
+						files.map((file) => async () => {
+							const [onlineFile, metadata] = await Promise.all([
+								t.drive
+									.getFile(filePathToId[file.path] as string)
+									.arrayBuffer(),
+								t.drive.getFileMetadata(
+									filePathToId[file.path] as string,
+								),
+							]);
+							if (!onlineFile || !metadata) {
+								return new Notice(
+									'[reset] failed to download file from drive. Check diagnostics.',
+									8000,
+								);
+							}
 
-					completed++;
-					syncNotice.setMessage(
-						getSyncMessage(33, 66, completed, files.length),
+							completed++;
+							syncNotice.setMessage(
+								getSyncMessage(33, 66, completed, files.length),
+							);
+							return t.modifyFile(
+								file,
+								onlineFile,
+								metadata.modifiedTime,
+							);
+						}),
 					);
-					return t.modifyFile(
-						file,
-						onlineFile,
-						metadata.modifiedTime,
-					);
-				}),
+				},
 			);
 		}
 
 		if (deletes.length) {
-			const files = await t.drive.searchFiles({
-				include: ['id', 'mimeType', 'properties', 'modifiedTime'],
-				matches: deletes.map(([path]) => ({
-					properties: splitPath(path),
-				})),
-			});
+			const files = await t.diagnostics.withContext(
+				'list-files',
+				'reset-search-deletes',
+				() =>
+					t.drive.searchFiles({
+						include: ['id', 'mimeType', 'properties', 'modifiedTime'],
+						matches: deletes.map(([path]) => ({
+							properties: splitPath(path),
+						})),
+					}),
+			);
 			if (!files) {
-				new Notice('An error occurred fetching Google Drive files.');
+				new Notice(
+					'[reset] failed to search drive files. Check diagnostics.',
+					8000,
+				);
 				return;
 			}
 
@@ -150,27 +176,33 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 				([path]) => pathToFile[path]?.mimeType !== folderMimeType,
 			);
 
-			await batchAsync(
-				deletedFiles.map(([path]) => async () => {
-					const onlineFile = await t.drive
-						.getFile(filePathToId[path] as string)
-						.arrayBuffer();
-					if (!onlineFile) {
-						return new Notice(
-							'An error occurred fetching Google Drive files.',
+		await t.diagnostics.withContext(
+			'download',
+			'reset-download-restores',
+			() =>
+				batchAsync(
+					deletedFiles.map(([path]) => async () => {
+						const onlineFile = await t.drive
+							.getFile(filePathToId[path] as string)
+							.arrayBuffer();
+						if (!onlineFile) {
+							return new Notice(
+								'[reset] failed to download file from drive. Check diagnostics.',
+								8000,
+							);
+						}
+						completed++;
+						syncNotice.setMessage(
+							getSyncMessage(66, 99, completed, deletedFiles.length),
 						);
-					}
-					completed++;
-					syncNotice.setMessage(
-						getSyncMessage(66, 99, completed, deletedFiles.length),
-					);
-					return t.createFile(
-						path,
-						onlineFile,
-						pathToFile[path]?.modifiedTime,
-					);
-				}),
-			);
+						return t.createFile(
+							path,
+							onlineFile,
+							pathToFile[path]?.modifiedTime,
+						);
+					}),
+				),
+		);
 		}
 
 		t.settings.operations = {};

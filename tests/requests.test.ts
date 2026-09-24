@@ -33,6 +33,14 @@ const createPlugin = () => ({
 		accessTokenUrl: 'https://tokens.example.com/access',
 	},
 	saveSettings: vi.fn(async () => undefined),
+	diagnostics: {
+		enabled: false,
+		currentPhase: null,
+		withContext: vi.fn(
+			async (_p: string, _o: string, fn: () => Promise<unknown>) => fn(),
+		),
+		record: vi.fn(),
+	},
 });
 
 describe('refreshAccessToken', () => {

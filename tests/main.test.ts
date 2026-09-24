@@ -41,6 +41,17 @@ const createPlugin = () =>
 			rootFolderId: '',
 			lastSyncedAt: 0,
 			changesToken: 'old-token',
+			enableDiagnostics: false,
+			maskFilePaths: true,
+		},
+		diagnostics: {
+			enabled: false,
+			currentPhase: null,
+			withContext: vi.fn(
+				async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+					fn(),
+			),
+			record: vi.fn(),
 		},
 		debouncedSaveSettings: vi.fn(),
 		saveSettings: vi.fn(async () => undefined),

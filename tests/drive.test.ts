@@ -20,6 +20,15 @@ const createPlugin = () =>
 		app: { vault: { getName: () => 'Test vault' } },
 		settings: { refreshToken: 'refresh-token', rootFolderId: '' },
 		saveSettings: vi.fn(async () => undefined),
+		diagnostics: {
+			enabled: false,
+			currentPhase: null,
+			withContext: vi.fn(
+				async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+					fn(),
+			),
+			record: vi.fn(),
+		},
 	}) as never;
 
 describe('Drive path properties', () => {

@@ -5,7 +5,6 @@ import {
 	fileNameFromPath,
 	folderMimeType,
 	foldersToBatches,
-	getSyncMessage,
 	splitPath,
 	unSplitPath,
 } from './drive';
@@ -277,7 +276,7 @@ export const push = async (
 
 	if (!proceed) return;
 
-	const syncNotice = await t.startSync();
+	const syncNotice = await t.startSync('Pushing to Google Drive');
 
 	let lastPhase: SyncPhase = 'upload';
 
@@ -289,7 +288,7 @@ export const push = async (
 				message: 'Prerequisite pull failed before push could begin',
 			});
 			new Notice(
-				'[push] aborted — pull failed first. Check diagnostics.',
+				'Push aborted: could not sync before pushing. Check diagnostics.',
 				8000,
 			);
 			return;
@@ -300,7 +299,7 @@ export const push = async (
 			t.drive.getRootFolderId(true),
 		))) {
 			new Notice(
-				'[push] could not verify the drive vault folder. Check diagnostics.',
+				'Push failed: could not verify the drive vault folder. Check diagnostics.',
 				8000,
 			);
 			return;
@@ -332,7 +331,7 @@ export const push = async (
 		);
 		if (!configOnDrive) {
 			new Notice(
-				'[push] failed to fetch config files from drive. Check diagnostics.',
+				'Push failed: could not fetch config files. Check diagnostics.',
 				8000,
 			);
 			return;
@@ -354,7 +353,7 @@ export const push = async (
 			});
 			if (idsToDelete.some((id) => !id)) {
 				new Notice(
-					'[push] could not identify all drive files to delete. Check diagnostics.',
+					'Push failed: could not identify all drive files to delete. Check diagnostics.',
 					8000,
 				);
 				return;
@@ -371,17 +370,19 @@ export const push = async (
 			);
 			if (!deleteRequest) {
 				new Notice(
-					'[push] failed to delete drive files. Check diagnostics.',
+					'Push failed: could not delete drive files. Check diagnostics.',
 					8000,
 				);
 				return;
 			}
 			uniqueIds.forEach((id) => delete t.settings.driveIdToPath[id]);
+
+			syncNotice.setMessage(
+				`Pushing... ${uniqueIds.length} file${uniqueIds.length === 1 ? '' : 's'} deleted`,
+			);
 		}
 
-		syncNotice.setMessage('Syncing (33%)');
-
-		if (creates.length) {
+	if (creates.length) {
 			await t.diagnostics.withContext('upload', 'create-and-upload-files', async () => {
 				lastPhase = 'upload';
 				let completed = 0;
@@ -407,7 +408,7 @@ export const push = async (
 								});
 								if (!id) {
 									new Notice(
-										'[push] failed to create drive folder. Check diagnostics.',
+										'Push failed: could not create drive folder. Check diagnostics.',
 										8000,
 									);
 									return;
@@ -415,7 +416,7 @@ export const push = async (
 
 								completed++;
 								syncNotice.setMessage(
-									getSyncMessage(33, 66, completed, files.length),
+									`Pushing... uploading ${completed}/${files.length} files`,
 								);
 
 								t.settings.driveIdToPath[id] = folder.path;
@@ -440,22 +441,22 @@ export const push = async (
 						);
 						if (!id) {
 							new Notice(
-								'[push] failed to upload file to drive. Check diagnostics.',
+								'Push failed: could not upload file to drive. Check diagnostics.',
 								8000,
 							);
 							return;
 						}
 
-						completed++;
-						syncNotice.setMessage(
-							getSyncMessage(33, 66, completed, files.length),
-						);
+					completed++;
+					syncNotice.setMessage(
+						`Pushing... uploading ${completed}/${files.length} files`,
+					);
 
-						t.settings.driveIdToPath[id] = note.path;
-					}),
-				);
-			});
-		}
+					t.settings.driveIdToPath[id] = note.path;
+				}),
+			);
+		});
+	}
 
 		if (modifies.length) {
 			await t.diagnostics.withContext('update', 'update-modified-files', async () => {
@@ -480,18 +481,18 @@ export const push = async (
 							new Blob([await vault.readBinary(file)]),
 							{ modifiedTime: new Date().toISOString() },
 						);
-						if (!id) {
-							new Notice(
-								'[push] failed to update file on drive. Check diagnostics.',
-								8000,
-							);
+					if (!id) {
+						new Notice(
+							'Push failed: could not update file on drive. Check diagnostics.',
+							8000,
+						);
 							return;
 						}
 
-						completed++;
-						syncNotice.setMessage(
-							getSyncMessage(66, 99, completed, files.length),
-						);
+					completed++;
+					syncNotice.setMessage(
+						`Pushing... updating ${completed}/${files.length} files`,
+					);
 					}),
 				);
 			});
@@ -535,11 +536,11 @@ export const push = async (
 							},
 							modifiedTime: new Date().toISOString(),
 						});
-							if (!id) {
-								new Notice(
-									'[push] failed to create config folder on drive. Check diagnostics.',
-									8000,
-								);
+						if (!id) {
+							new Notice(
+								'Push failed: could not create config folder. Check diagnostics.',
+								8000,
+							);
 								return;
 							}
 
@@ -570,11 +571,11 @@ export const push = async (
 						modifiedTime: new Date().toISOString(),
 					},
 				);
-				if (!id) {
-					new Notice(
-						'[push] failed to upload config file to drive. Check diagnostics.',
-						8000,
-					);
+			if (!id) {
+				new Notice(
+					'Push failed: could not upload config file. Check diagnostics.',
+					8000,
+				);
 					return;
 				}
 
@@ -595,7 +596,10 @@ export const push = async (
 
 		if (!(await t.endSync(syncNotice, false))) return;
 
-		new Notice('Sync complete!');
+		const totalFiles = creates.length + modifies.length;
+		new Notice(
+			`Push complete — ${totalFiles} file${totalFiles === 1 ? '' : 's'} synced.`,
+		);
 	} catch (error) {
 		t.diagnostics.record({
 			phase: lastPhase,
@@ -604,7 +608,7 @@ export const push = async (
 			stack: error instanceof Error ? error.stack : undefined,
 		});
 		new Notice(
-			`[push] Sync failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
+			`Push failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
 			8000,
 		);
 		console.error('Google Drive push failed', error);

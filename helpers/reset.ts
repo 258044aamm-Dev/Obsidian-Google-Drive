@@ -3,7 +3,6 @@ import {
 	batchAsync,
 	folderMimeType,
 	foldersToBatches,
-	getSyncMessage,
 	splitPath,
 	unSplitPath,
 } from './drive';
@@ -50,7 +49,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 	});
 	if (!proceed) return;
 
-	const syncNotice = await t.startSync();
+	const syncNotice = await t.startSync('Resetting from Google Drive');
 	try {
 		if (!(await pull(t, true))) {
 			t.diagnostics.record({
@@ -59,7 +58,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 				message: 'Pull failed before reset could begin',
 			});
 			new Notice(
-				'[reset] aborted — pull failed first. Check diagnostics.',
+				'Reset aborted: could not sync before resetting. Check diagnostics.',
 				8000,
 			);
 			return;
@@ -87,7 +86,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 			);
 		}
 
-		syncNotice.setMessage('Syncing (33%)');
+		syncNotice.setMessage('Resetting... restoring local files');
 
 		if (modifies.length) {
 			await t.diagnostics.withContext(
@@ -108,17 +107,17 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 									filePathToId[file.path] as string,
 								),
 							]);
-							if (!onlineFile || !metadata) {
-								return new Notice(
-									'[reset] failed to download file from drive. Check diagnostics.',
-									8000,
-								);
-							}
-
-							completed++;
-							syncNotice.setMessage(
-								getSyncMessage(33, 66, completed, files.length),
+						if (!onlineFile || !metadata) {
+							return new Notice(
+								'Reset failed: could not download file from drive. Check diagnostics.',
+								8000,
 							);
+						}
+
+						completed++;
+						syncNotice.setMessage(
+							`Resetting... downloading ${completed}/${files.length} files`,
+						);
 							return t.modifyFile(
 								file,
 								onlineFile,
@@ -142,11 +141,11 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 						})),
 					}),
 			);
-			if (!files) {
-				new Notice(
-					'[reset] failed to search drive files. Check diagnostics.',
-					8000,
-				);
+		if (!files) {
+			new Notice(
+				'Reset failed: could not search drive files. Check diagnostics.',
+				8000,
+			);
 				return;
 			}
 
@@ -185,16 +184,16 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 						const onlineFile = await t.drive
 							.getFile(filePathToId[path] as string)
 							.arrayBuffer();
-						if (!onlineFile) {
-							return new Notice(
-								'[reset] failed to download file from drive. Check diagnostics.',
-								8000,
-							);
-						}
-						completed++;
-						syncNotice.setMessage(
-							getSyncMessage(66, 99, completed, deletedFiles.length),
+					if (!onlineFile) {
+						return new Notice(
+							'Reset failed: could not download file from drive. Check diagnostics.',
+							8000,
 						);
+					}
+					completed++;
+					syncNotice.setMessage(
+						`Resetting... restoring ${completed}/${deletedFiles.length} files`,
+					);
 						return t.createFile(
 							path,
 							onlineFile,

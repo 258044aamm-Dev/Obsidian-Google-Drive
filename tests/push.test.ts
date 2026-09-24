@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const pushNotices = vi.hoisted(() => [] as string[]);
 
 vi.mock('obsidian', () => {
 	class Element {
@@ -66,7 +68,11 @@ vi.mock('obsidian', () => {
 	class TFolder extends TFile {}
 	return {
 		Modal,
-		Notice: class {},
+		Notice: class {
+			constructor(message: string) {
+				pushNotices.push(message);
+			}
+		},
 		Setting,
 		TFile,
 		TFolder,
@@ -80,6 +86,10 @@ import { TFile, TFolder } from 'obsidian';
 import { ConfirmUndoModal, push } from '../helpers/push';
 
 describe('push', () => {
+	beforeEach(() => {
+		pushNotices.length = 0;
+	});
+
 	it('does nothing while another sync is running', async () => {
 		const plugin = { syncing: true, startSync: vi.fn() };
 
@@ -182,6 +192,70 @@ describe('push', () => {
 		);
 		expect(plugin.settings.operations).toEqual({});
 		expect(plugin.endSync).toHaveBeenCalledWith(syncNotice, false);
+	});
+
+	it('shows the correct completion message after pushing', async () => {
+		const newFile = new TFile('new.md', { path: '' });
+		const syncNotice = { setMessage: vi.fn(), hide: vi.fn() };
+		const drive = {
+			searchFiles: vi.fn(async () => []),
+			getChanges: vi.fn(async () => []),
+			batchDelete: vi.fn(async () => true),
+			getRootFolderId: vi.fn(async () => 'root-id'),
+			createFolder: vi.fn(async () => 'new-id'),
+			uploadFile: vi.fn(async () => 'upload-id'),
+			updateFile: vi.fn(async () => 'update-id'),
+			getConfigFilesToSync: vi.fn(async () => []),
+			getChangesStartToken: vi.fn(async () => 'token'),
+		};
+		const plugin = {
+			syncing: false,
+			app: {
+				vault: {
+					configDir: '.config',
+					adapter: { exists: vi.fn(async () => true) },
+					getAllLoadedFiles: vi.fn(() => [newFile]),
+					getAbstractFileByPath: vi.fn((path: string) =>
+						path === 'new.md' ? newFile : null,
+					),
+					getFileByPath: vi.fn((path: string) =>
+						path === 'new.md' ? newFile : null,
+					),
+					readBinary: vi.fn(async () => new ArrayBuffer(1)),
+				},
+			},
+			accessToken: { token: 'access', expiresAt: Date.now() + 3_600_000 },
+			settings: {
+				operations: { 'new.md': 'create' },
+				driveIdToPath: {},
+				lastSyncedAt: 0,
+				changesToken: 'changes',
+			},
+			drive,
+			startSync: vi.fn(async () => syncNotice),
+			endSync: vi.fn(async () => {
+				plugin.syncing = false;
+				return true;
+			}),
+			abortSync: vi.fn(),
+			diagnostics: {
+				enabled: false,
+				currentPhase: null,
+				withContext: vi.fn(
+					async (_p: string, _o: string, fn: () => Promise<unknown>) =>
+						fn(),
+				),
+				record: vi.fn(),
+			},
+		};
+
+		const result = await push(plugin as never, true);
+
+		expect(result).toBeUndefined();
+		expect(plugin.endSync).toHaveBeenCalledWith(syncNotice, false);
+		expect(pushNotices).toContainEqual(
+			expect.stringContaining('Push complete — 1 file synced'),
+		);
 	});
 });
 

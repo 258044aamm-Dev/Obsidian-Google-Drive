@@ -5,7 +5,6 @@ import {
 	FileMetadata,
 	folderMimeType,
 	foldersToBatches,
-	getSyncMessage,
 	unSplitPath,
 } from './drive';
 import { refreshAccessToken } from './requests';
@@ -17,7 +16,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 
 	if (!silenceNotices) {
 		if (t.syncing) return;
-		syncNotice = await t.startSync();
+		syncNotice = await t.startSync('Pulling from Google Drive');
 	}
 
 	let lastPhase: SyncPhase = 'auto-sync';
@@ -30,7 +29,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		if (!t.accessToken.token) {
 			if (!(await refreshAccessToken(t))) {
 				new Notice(
-					'[pull] authentication failed. Re-authenticate in plugin settings.',
+					'Pull failed: authentication error. Re-authenticate in plugin settings.',
 					8000,
 				);
 				t.abortSync(syncNotice);
@@ -57,7 +56,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		);
 		if (!recentlyModified) {
 			new Notice(
-				'[pull] failed to list drive files. Check diagnostics for details.',
+				'Pull failed: could not list drive files. Check diagnostics.',
 				8000,
 			);
 			t.abortSync(syncNotice);
@@ -125,7 +124,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		);
 		if (!changes) {
 			new Notice(
-				'[pull] failed to fetch drive changes. Check diagnostics for details.',
+				'Pull failed: could not fetch drive changes. Check diagnostics.',
 				8000,
 			);
 			t.abortSync(syncNotice);
@@ -159,7 +158,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		if (!recentlyModified.length && !deletions.length) {
 			if (silenceNotices) return true;
 			const ended = await t.endSync(syncNotice);
-			if (ended) new Notice("You're up to date!");
+			if (ended) new Notice('Pull complete — already up to date.');
 			return ended;
 		}
 
@@ -223,7 +222,9 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			await deleteFiles();
 		});
 
-		syncNotice?.setMessage('Syncing (33%)');
+		syncNotice?.setMessage(
+			`Pulling... ${deletions.filter(Boolean).length} files removed`,
+		);
 
 		const upsertFiles = async () => {
 			const newFolders = recentlyModified.filter(
@@ -281,7 +282,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 						.arrayBuffer();
 
 					syncNotice?.setMessage(
-						getSyncMessage(33, 100, completed, newNotes.length),
+						`Pulling... downloading ${completed}/${newNotes.length} files`,
 					);
 
 					if (localFile instanceof TFile) {
@@ -407,8 +408,15 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 
 		if (silenceNotices) return true;
 
+		const syncedCount = recentlyModified.filter(
+			({ mimeType }) => mimeType !== folderMimeType,
+		).length;
 		const ended = await t.endSync(syncNotice);
-		if (ended) new Notice('Files have been synced from Google Drive!');
+		if (ended) {
+			new Notice(
+				`Pull complete — ${syncedCount} file${syncedCount === 1 ? '' : 's'} synced.`,
+			);
+		}
 		return ended;
 	} catch (error) {
 		t.diagnostics.record({
@@ -419,7 +427,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		});
 		t.abortSync(syncNotice);
 		new Notice(
-			`[pull] sync failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
+			`Pull failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
 			8000,
 		);
 		console.error('Google Drive pull failed', error);

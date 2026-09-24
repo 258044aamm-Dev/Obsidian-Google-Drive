@@ -237,4 +237,45 @@ describe('pull', () => {
 			'note-id': 'remote/note.md',
 		});
 	});
+
+	it('shows the correct completion message after syncing files', async () => {
+		const syncNotice = { setMessage: vi.fn(), hide: vi.fn() };
+		const plugin = createPlugin();
+		plugin.startSync = vi.fn(async () => syncNotice);
+		plugin.drive.searchFiles
+			.mockResolvedValueOnce([
+				{
+					id: 'file-id',
+					mimeType: 'text/markdown',
+					properties: { path: 'note.md' },
+					modifiedTime: '2025-01-01T00:00:00.000Z',
+				},
+			])
+			.mockResolvedValueOnce([]);
+		plugin.drive.getChanges.mockResolvedValueOnce([]);
+		plugin.drive.getFile.mockReturnValue({
+			arrayBuffer: vi.fn(async () => new ArrayBuffer(4)),
+		});
+
+		const result = await pull(plugin as never, false);
+
+		expect(result).toBe(true);
+		expect(notices).toContainEqual(
+			expect.stringContaining('Pull complete — 1 file synced'),
+		);
+	});
+
+	it('shows the correct message when there are no changes to pull', async () => {
+		const syncNotice = { setMessage: vi.fn(), hide: vi.fn() };
+		const plugin = createPlugin();
+		plugin.startSync = vi.fn(async () => syncNotice);
+		plugin.settings.lastSyncedAt = Date.now();
+
+		const result = await pull(plugin as never, false);
+
+		expect(result).toBe(true);
+		expect(notices).toContainEqual(
+			expect.stringContaining('Pull complete — already up to date'),
+		);
+	});
 });

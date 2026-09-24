@@ -357,7 +357,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		if (!oldOperation) delete this.settings.operations[file.path];
 	}
 
-	async startSync() {
+	async startSync(operationName = 'Syncing') {
 		if (!(await checkConnection())) {
 			new Notice(
 				'You are not connected to the internet, so you cannot sync right now. Please try syncing once you have connection again.',
@@ -367,7 +367,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		this.clearAutoPushTimer();
 		this.ribbonIcon.addClass('spin');
 		this.syncing = true;
-		return new Notice('Syncing (0%)', 0);
+		return new Notice(`${operationName}...`, 0);
 	}
 
 	async endSync(syncNotice?: Notice, retainConfigChanges = true) {

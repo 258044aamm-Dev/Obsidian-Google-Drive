@@ -9,7 +9,7 @@ export class Device {
 	vault: FakeVault;
 	plugin: any;
 	label: string;
-	constructor(label: string, public world: World, vault?: FakeVault) {
+	constructor(label: string, public world: World, vault?: FakeVault, public root?: string) {
 		this.label = label;
 		this.vault = vault ?? new FakeVault(world.vaultName);
 		// a real install always has the plugin folder with main.js/manifest.json on disk
@@ -22,7 +22,7 @@ export class Device {
 	}
 	/** (Re)start Obsidian on this device: fresh plugin instance, state loaded from data.json on disk, then layout-ready → startup pull. */
 	async start(opts: { startupPull?: boolean; settings?: Record<string, unknown> } = {}) {
-		const { default: Plugin } = await import(this.world.mainPath);
+		const { default: Plugin } = await import(this.root ? this.root + '/main.ts' : this.world.mainPath);
 		const app = {
 			vault: this.vault,
 			fileManager: this.vault.fileManager,
@@ -62,14 +62,14 @@ export class Device {
 		throw new Error('never went quiet');
 	}
 	async pull(silent = false) {
-		const { pull } = await import(this.world.pullPath);
+		const { pull } = await import(this.root ? this.root + '/helpers/pull.ts' : this.world.pullPath);
 		notices.length = 0;
 		const r = await pull(this.plugin, silent);
 		await sleep(5);
 		return r;
 	}
 	async push() {
-		const { push } = await import(this.world.pushPath);
+		const { push } = await import(this.root ? this.root + '/helpers/push.ts' : this.world.pushPath);
 		notices.length = 0;
 		await push(this.plugin, true);
 		await sleep(5);
@@ -100,8 +100,9 @@ export class World {
 		this.pushPath = root + '/helpers/push.ts';
 		net.handler = this.drive.handler;
 	}
-	device(label: string, vault?: FakeVault) {
-		return new Device(label, this, vault);
+	/** `root` lets one device run a different plugin checkout (e.g. upstream) against the same Drive. */
+	device(label: string, vault?: FakeVault, root?: string) {
+		return new Device(label, this, vault, root);
 	}
 }
 

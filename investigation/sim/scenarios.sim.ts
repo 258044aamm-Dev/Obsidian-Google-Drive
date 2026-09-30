@@ -5,6 +5,13 @@ vi.mock('obsidian', async () => await import('../../tests/sim/obsidian-mock'));
 import { World, diff, sleep, notices, dec, Device } from '../../tests/sim/world';
 import { TFile } from '../../tests/sim/obsidian-mock';
 
+// These scenarios reproduce the legacy "pull on startup" behaviour, so opt in explicitly:
+// the fork (3.2.0+) no longer pulls at startup unless `startupPull` is on. Upstream ignores the setting.
+const originalStart = Device.prototype.start;
+Device.prototype.start = function (this: Device, opts = {}) {
+	return originalStart.call(this, { ...opts, settings: { startupPull: true, ...(opts.settings ?? {}) } });
+};
+
 const ROOT = process.env.SIM_ROOT as string; // plugin source root under test
 const VERSION = process.env.SIM_VERSION ?? '0.0.0';
 const LABEL = process.env.SIM_LABEL ?? 'run';
@@ -81,14 +88,15 @@ const variants = VERSION >= '3.1.2' ? [true, false] : [true];
 describe('reproduction', () => {
 	it('S0 sanity: mobile bootstrap equals desktop', async () => {
 		const { w, desktop, mobile } = await setup();
-		const cfg = [...w.drive.files.values()].find((f) => f.properties.path === '.obsidian/plugins/google-drive-sync/data.json')!;
-		const uploaded = JSON.parse(dec(cfg.content!));
+		const cfg = [...w.drive.files.values()].find((f) => f.properties.path === '.obsidian/plugins/google-drive-sync/data.json');
+		// 3.2.0+ never uploads the plugin's own data.json, so there may be nothing to inspect.
+		const uploaded = cfg ? JSON.parse(dec(cfg.content!)) : { operations: {} };
 		record('S0', {
 			'desktop == Drive': same(desktop.tree(), w.drive.snapshotNonConfig()),
 			'desktop == mobile': same(desktop.tree(), mobile.tree()),
 			'phone pending ops after clean bootstrap': Object.keys(mobile.ops()).length,
-			'keys inside data.json that the plugin uploads to Drive': Object.keys(uploaded),
-			'uploaded data.json contains refreshToken?': !!uploaded.refreshToken,
+			'keys inside data.json that the plugin uploads to Drive': cfg ? Object.keys(uploaded) : 'NOT UPLOADED',
+			'uploaded data.json contains refreshToken?': cfg ? !!uploaded.refreshToken : false,
 			'uploaded data.json: pending ops count (should be 0 after a finished push)': Object.keys(uploaded.operations).length,
 			'uploaded data.json: changesToken vs real latest': [uploaded.changesToken, String(w.drive.changes.length + 1)],
 		});

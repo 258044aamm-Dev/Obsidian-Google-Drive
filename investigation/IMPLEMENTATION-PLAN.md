@@ -1,5 +1,8 @@
 # Implementation plan: permanent sync fix for the fork
 
+> **Status (updated after execution):** P0 and P1 are implemented on branch `fix/manual-sync-safety` as release **3.2.0** (see the git log). P2–P8 (the state-based engine) are NOT started; they wait for on-device validation of 3.2.0.
+
+
 *Plan only. No source files have been changed. Builds on `SYNC-INVESTIGATION.md` (findings F1–F7).*
 
 **Decisions already made by you:** fix permanently in the fork · manual-only sync on every device · phone was set up by plugin's own first pull · both devices currently on upstream 3.1.1 · no unsynced phone edits.

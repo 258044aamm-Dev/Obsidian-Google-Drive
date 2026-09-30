@@ -32,7 +32,7 @@ export class Device {
 		this.vault.handlers = {};
 		const p = new Plugin(app, { id: 'google-drive-sync', version: this.world.version });
 		p.app = app;
-		await this.withRefreshToken(p, opts.settings);
+		await this.withRefreshToken(p, { ...this.world.defaultSettings, ...opts.settings });
 		await p.onload();
 		p.accessToken = { token: 'tok', expiresAt: Date.now() + 3_600_000 };
 		this.plugin = p;
@@ -87,6 +87,8 @@ export class Device {
 
 export class World {
 	drive: FakeDrive;
+	/** settings every device in this world starts with (tests override per scenario) */
+	defaultSettings: Record<string, unknown> = {};
 	vaultName = 'V';
 	version: string;
 	mainPath: string;

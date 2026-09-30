@@ -26,6 +26,8 @@ interface PluginSettings {
 	autoPush: boolean;
 	/** Pull from Drive automatically when Obsidian starts. Off by default: sync is manual. */
 	startupPull: boolean;
+	/** Files deleted on this device go to the Drive Trash (recoverable) instead of being deleted permanently. */
+	deleteToTrash: boolean;
 	operations: Record<string, 'create' | 'delete' | 'modify'>;
 	driveIdToPath: Record<string, string>;
 	rootFolderId: string;
@@ -43,6 +45,7 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	accessTokenUrl: '',
 	autoPush: false,
 	startupPull: false,
+	deleteToTrash: true,
 	operations: {},
 	driveIdToPath: {},
 	rootFolderId: '',
@@ -738,6 +741,15 @@ class SettingsTab extends PluginSettingTab {
 					type: 'toggle',
 					key: 'autoPush',
 					defaultValue: false,
+				},
+			},
+			{
+				name: 'Move deleted files to Google Drive Trash',
+				desc: 'On by default: files you delete are moved to the Google Drive Trash, where you can restore them for about 30 days, instead of being deleted permanently. Every device that syncs this vault must run this version of the plugin, otherwise it will not see these deletions. Turn off to delete permanently.',
+				control: {
+					type: 'toggle',
+					key: 'deleteToTrash',
+					defaultValue: true,
 				},
 			},
 			{

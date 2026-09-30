@@ -6,15 +6,20 @@
  * state-based engine (plan P2-P6). They flip to hard failures if they start passing,
  * which tells us to promote them to normal tests.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.stubGlobal('window', globalThis);
 vi.mock('obsidian', async () => await import('./obsidian-mock'));
 import { sleep, dec, netLog } from './world';
-import { setup, desktopCleanup, same } from './scenario-helpers';
+import { setup, desktopCleanup, same, simDefaults } from './scenario-helpers';
 import { TFile, modalTexts } from './obsidian-mock';
 import { runSyncDoctor } from '../../helpers/doctor-command';
 
-describe('sync regression (two devices, fake Drive)', () => {
+// The whole suite runs twice: with Drive deletes going to the Trash (default) and permanent (legacy).
+describe.each([true, false])('sync regression (two devices, fake Drive), deleteToTrash=%s', (trash) => {
+	beforeEach(() => {
+		simDefaults.deleteToTrash = trash;
+	});
+
 	it('S0 clean bootstrap: phone == desktop == Drive, no pending ops', async () => {
 		const { w, desktop, mobile } = await setup();
 		expect(same(desktop.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
@@ -243,7 +248,7 @@ describe('sync regression (two devices, fake Drive)', () => {
 			expect(w.drive.snapshotNonConfig()).toContain('Projects/Alpha/phone-only.md');
 			expect(w.drive.snapshotNonConfig()).not.toContain('Archive/');
 			expect(w.drive.snapshotNonConfig()).not.toContain('Archive/old.md');
-			const plan = [...w.drive.files.values()].find((f) => f.properties.path === 'Projects/Alpha/plan.md');
+			const plan = [...w.drive.files.values()].find((f) => !f.trashed && f.properties.path === 'Projects/Alpha/plan.md');
 			expect(dec(plan!.content!)).toBe('edited on phone');
 			expect(same(mobile.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
 		});
@@ -303,7 +308,7 @@ describe('sync regression (two devices, fake Drive)', () => {
 		await mobile.pull();
 		await mobile.vault.modify(mobile.vault.getFileByPath('Inbox/c-none.md') as TFile, 'x').catch(() => {});
 		await mobile.push();
-		const drive = [...w.drive.files.values()].find((f) => f.properties.path === 'Inbox/b.md')!;
+		const drive = [...w.drive.files.values()].find((f) => !f.trashed && f.properties.path === 'Inbox/b.md')!;
 		expect(dec(drive.content!)).toBe('NEW TEXT FROM DESKTOP');
 	});
 });

@@ -2,7 +2,10 @@ import { World, Device, sleep, diff } from './world';
 
 /** Root of the plugin source under test (this repo). */
 export const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
-export const VERSION = '3.2.0';
+export const VERSION = '3.3.0';
+
+/** settings applied to every device created by `setup()`; the regression suite runs once per value of `deleteToTrash` */
+export const simDefaults: Record<string, unknown> = {};
 
 export const same = (a: string[], b: string[]) => {
 	const d = diff(a, b);
@@ -15,6 +18,7 @@ export const same = (a: string[], b: string[]) => {
  */
 export async function setup(opts: { eventsForChildren?: boolean } = {}) {
 	const w = new World(ROOT, VERSION);
+	w.defaultSettings = { ...simDefaults };
 	const desktop = w.device('desktop');
 	desktop.vault.eventsForChildren = opts.eventsForChildren ?? true;
 	await desktop.start({ startupPull: false });

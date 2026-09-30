@@ -15,6 +15,7 @@ import {
 	partitionFolderDeletions,
 } from './folder-deletion';
 import { isOwnPluginPath } from './own-plugin';
+import { addTrashedAsRemoved } from './trash';
 
 export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 	let syncNotice = undefined;
@@ -142,6 +143,9 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			if (!silenceNotices) t.abortSync(syncNotice);
 			return false;
 		}
+		// Files moved to the Drive Trash count as removed, whether or not the feed says so.
+		await addTrashedAsRemoved(t, changes);
+
 		const removedPaths = Object.fromEntries(
 			changes
 				.filter(({ removed }) => removed)

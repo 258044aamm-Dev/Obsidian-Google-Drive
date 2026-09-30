@@ -414,8 +414,14 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}));
 	};
 
+	/**
+	 * Removes files from Drive. With "Delete to Trash" on (the default) they are moved to
+	 * the Drive Trash, where they stay recoverable (Drive empties the Trash after about 30
+	 * days); otherwise they are deleted permanently, exactly as before.
+	 */
 	const batchDelete = async (ids: string[]) => {
 		if (!ids.length) return true;
+		const trash = t.settings.deleteToTrash === true;
 
 		for (let offset = 0; offset < ids.length; offset += 100) {
 			const batch = ids.slice(offset, offset + 100);
@@ -428,8 +434,14 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 							'Content-Type: application/http',
 							`Content-ID: <request_${offset + index + 1}>`,
 							'',
-							`DELETE /drive/v3/files/${fileId} HTTP/1.1`,
-							'',
+							...(trash
+								? [
+										`PATCH /drive/v3/files/${fileId}?fields=id HTTP/1.1`,
+										'Content-Type: application/json',
+										'',
+										JSON.stringify({ trashed: true }),
+									]
+								: [`DELETE /drive/v3/files/${fileId} HTTP/1.1`, '']),
 						].join('\r\n'),
 					)
 					.concat(`--${boundary}--`)
@@ -505,6 +517,36 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}
 
 		return result.changes;
+	};
+
+	/**
+	 * Ids of this vault's files that are in the Drive Trash. Used by Pull so that a file
+	 * trashed on another device is noticed even if the changes feed does not report it as
+	 * removed. Returns undefined when the listing fails (the caller treats that as "unknown").
+	 */
+	const listTrashedFileIds = async () => {
+		const query = encodeURIComponent(
+			"trashed=true and properties has { key='vault' and value='" +
+				escapeQueryValue(t.app.vault.getName()) +
+				"' }",
+		);
+		const ids: string[] = [];
+		let pageToken: string | undefined;
+		do {
+			const page = await drive
+				.get(
+					`drive/v3/files?fields=nextPageToken,files(id)&pageSize=1000&q=${query}${
+						pageToken
+							? '&pageToken=' + encodeURIComponent(pageToken)
+							: ''
+					}`,
+				)
+				.json<{ files?: { id: string }[]; nextPageToken?: string }>();
+			if (!page) return;
+			ids.push(...(page.files ?? []).map((file) => file.id));
+			pageToken = page.nextPageToken;
+		} while (pageToken);
+		return ids;
 	};
 
 	const deleteFilesMinimumOperations = async (files: TAbstractFile[]) => {
@@ -607,6 +649,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		getChangesStartToken,
 		getChanges,
 		batchDelete,
+		listTrashedFileIds,
 		checkConnection,
 		deleteFilesMinimumOperations,
 		getConfigFilesToSync,

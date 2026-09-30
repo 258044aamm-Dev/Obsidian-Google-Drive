@@ -29,6 +29,10 @@ export class FakeDrive {
 	gone = new Set<string>();
 	/** if true, deleting a folder reports only the folder itself in the changes feed (descendants vanish silently) */
 	omitDescendantRemovals = false;
+	/** real Drive's feed may or may not report a trashed file as `removed`; default: it does NOT (only a non-removed change) */
+	trashEmitsRemoved = false;
+	/** make the "which files are in the Trash" listing fail (Pull must carry on without it) */
+	failTrashedList = false;
 	constructor(vaultName: string) {
 		this.vaultName = vaultName;
 		this.rootId = this.add({
@@ -67,6 +71,26 @@ export class FakeDrive {
 		if (report) this.changes.push({ seq: this.changes.length + 1, fileId: id, removed: true });
 		return true;
 	}
+	/** Moves a file/folder to the Trash; a folder's descendants are trashed with it. */
+	trash(id: string, report = true) {
+		const f = this.files.get(id);
+		if (!f) return false;
+		if (!f.trashed) {
+			f.trashed = true;
+			if (report) this.changes.push({ seq: this.changes.length + 1, fileId: id, removed: this.trashEmitsRemoved });
+		}
+		if (f.mimeType === FOLDER) for (const c of [...this.files.values()]) if (c.parents.includes(id)) this.trash(c.id, report && !this.omitDescendantRemovals);
+		return true;
+	}
+	/** Restores a file from the Trash (a folder's descendants come back with it). */
+	untrash(id: string) {
+		const f = this.files.get(id);
+		if (!f) return false;
+		f.trashed = false;
+		this.changes.push({ seq: this.changes.length + 1, fileId: id, removed: false });
+		if (f.mimeType === FOLDER) for (const c of [...this.files.values()]) if (c.parents.includes(id)) this.untrash(c.id);
+		return true;
+	}
 	/** what the user sees in Drive: path -> (folder | size) */
 	snapshot() {
 		return [...this.files.values()]
@@ -77,12 +101,14 @@ export class FakeDrive {
 	}
 	snapshotNonConfig() {
 		return [...this.files.values()]
-			.filter((f) => f.properties.obsidian !== 'vault' && f.properties.config !== 'true')
+			.filter((f) => f.properties.obsidian !== 'vault' && f.properties.config !== 'true' && !f.trashed)
 			.map((f) => String(f.mimeType === FOLDER ? f.properties.path + '/' : f.properties.path))
 			.sort();
 	}
 
 	private evalQ(q: string, f: DFile): boolean {
+		const inTrash = q.match(/^trashed=true and properties has \{ key='vault' and value='((?:[^'\\]|\\.)*)' ?\}$/);
+		if (inTrash) return f.trashed && f.properties.vault === unesc(inTrash[1] as string);
 		if (f.trashed) return false;
 		const tail = q.match(/properties has \{ key='vault' and value='((?:[^'\\]|\\.)*)' ?\}$/);
 		if (tail && f.properties.vault !== unesc(tail[1] as string)) return false;
@@ -148,6 +174,7 @@ export class FakeDrive {
 		}
 		if (method === 'GET' && path === '/drive/v3/files') {
 			const q = url.searchParams.get('q') ?? '';
+			if (this.failTrashedList && q.startsWith('trashed=true')) return { status: 500, text: 'injected trash listing failure', json: {} };
 			return ok({ files: [...this.files.values()].filter((f) => this.evalQ(q, f)) });
 		}
 		let m = /^\/drive\/v3\/files\/([^/]+)$/.exec(path);
@@ -190,8 +217,19 @@ export class FakeDrive {
 			return ok({ id: f.id });
 		}
 		if (method === 'POST' && path === '/batch/drive/v3') {
-			const ids = [...String(req.body).matchAll(/DELETE \/drive\/v3\/files\/(\S+) HTTP/g)].map((x) => x[1]!);
-			const text = ids.map((id) => `HTTP/1.1 ${this.remove(id) || (!this.strictBatch && this.gone.has(id)) ? 204 : 404} x`).join('\n');
+			const parts = String(req.body).split(/--batch_[0-9a-f-]+/).filter((x) => /(DELETE|PATCH) \/drive\/v3\/files\//.test(x));
+			const text = parts
+				.map((part) => {
+					const [, verb, id] = /(DELETE|PATCH) \/drive\/v3\/files\/([^\s?]+)/.exec(part)!;
+					let done: boolean;
+					if (verb === 'DELETE') done = this.remove(id!);
+					else {
+						const body = JSON.parse(/\{.*\}/s.exec(part)![0]);
+						done = body.trashed === true ? this.trash(id!) : false;
+					}
+					return `HTTP/1.1 ${done || (!this.strictBatch && this.gone.has(id!)) ? (verb === 'DELETE' ? 204 : 200) : 404} x`;
+				})
+				.join('\n');
 			return { status: 200, text, json: {} };
 		}
 		return { status: 501, text: `fake drive: unhandled ${method} ${path}`, json: {} };

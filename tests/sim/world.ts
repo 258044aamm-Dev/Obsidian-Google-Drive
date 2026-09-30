@@ -5,10 +5,21 @@ import { FakeVault, enc, dec } from './fake-vault';
 export { notices, netLog, enc, dec };
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** This device's key storage (a real device uses IndexedDB); it survives plugin restarts of the same device. */
+const memoryKeyStore = () => {
+	const map = new Map<string, unknown>();
+	return {
+		get: async (id: string) => map.get(id),
+		put: async (id: string, key: unknown) => void map.set(id, key),
+		delete: async (id: string) => void map.delete(id),
+	};
+};
+
 export class Device {
 	vault: FakeVault;
 	plugin: any;
 	label: string;
+	keyStore = memoryKeyStore();
 	constructor(label: string, public world: World, vault?: FakeVault, public root?: string) {
 		this.label = label;
 		this.vault = vault ?? new FakeVault(world.vaultName);
@@ -32,6 +43,7 @@ export class Device {
 		this.vault.handlers = {};
 		const p = new Plugin(app, { id: 'google-drive-sync', version: this.world.version });
 		p.app = app;
+		p.keyStore = this.keyStore;
 		await this.withRefreshToken(p, { ...this.world.defaultSettings, ...opts.settings });
 		await p.onload();
 		p.accessToken = { token: 'tok', expiresAt: Date.now() + 3_600_000 };

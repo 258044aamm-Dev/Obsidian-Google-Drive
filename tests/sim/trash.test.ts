@@ -11,7 +11,7 @@ import { TFile } from './obsidian-mock';
 
 const failures = () => notices.filter((n) => /fail/i.test(n));
 const live = (w: any) => [...w.drive.files.values()].filter((f: any) => !f.trashed && f.properties.obsidian !== 'vault');
-const trashedPaths = (w: any) => [...w.drive.files.values()].filter((f: any) => f.trashed).map((f: any) => f.properties.path as string).sort();
+const trashedPaths = (w: any) => [...w.drive.files.values()].filter((f: any) => f.trashed).map((f: any) => w.drive.shown(f) as string).sort();
 
 describe('Drive Trash mode', () => {
 	beforeEach(() => {
@@ -104,8 +104,8 @@ describe('Drive Trash mode', () => {
 		expect(dec(mobile.vault.disk.get('Inbox/b.md')!.data as Uint8Array)).toBe('precious edit on phone');
 		await mobile.push();
 		expect(failures()).toEqual([]);
-		const onDrive = live(w).find((f: any) => f.properties.path === 'Inbox/b.md');
-		expect(dec(onDrive.content)).toBe('precious edit on phone');
+		const onDrive = live(w).find((f: any) => w.drive.shown(f) === 'Inbox/b.md');
+		expect(dec((await w.drive.contentOf(onDrive))!)).toBe('precious edit on phone');
 	});
 
 	it('a note deleted and re-created at the same path ends up with the new content on the other device', async () => {

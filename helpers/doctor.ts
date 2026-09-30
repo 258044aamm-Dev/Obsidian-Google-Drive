@@ -44,6 +44,8 @@ export interface DoctorEnvironment {
 	vaultEvents?: number;
 	/** Permissions (OAuth scopes) Google says this device's token has, or null when they could not be read. */
 	grantedScopes?: string[] | null;
+	/** Only set while end-to-end encryption is on: whether this device has the key. */
+	encryption?: 'unlocked' | 'locked';
 }
 
 const SCOPE_PREFIX = 'https://www.googleapis.com/auth/';
@@ -235,6 +237,13 @@ export const buildDoctorReport = (input: DoctorInput): DoctorReport => {
 		const { line, warning } = describeGrantedScopes(env.grantedScopes);
 		environmentLines.push(line);
 		if (warning) verdict.push(warning);
+	}
+	if (env && env.encryption) {
+		environmentLines.push(
+			env.encryption === 'unlocked'
+				? 'End-to-end encryption: on, and this device has the key. Drive holds only encrypted files and names; the paths above were decrypted on this device.'
+				: 'End-to-end encryption: on, but this device does not have the key.',
+		);
 	}
 	if (env && env.unrecordedEdits?.length) {
 		const sample = env.unrecordedEdits.slice(0, 5).join(', ');

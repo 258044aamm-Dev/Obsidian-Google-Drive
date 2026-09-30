@@ -139,7 +139,7 @@ describe.each([true, false])('push never pulls (deleteToTrash=%s)', (trash) => {
 			await mobile.pushWithoutPull();
 			expect(stopped()).toBe(true);
 			expect(notices.some((n) => n.includes('Inbox/b.md'))).toBe(true);
-			expect(dec([...w.drive.files.values()].find((f) => f.properties.path === 'Inbox/b.md' && !f.trashed)!.content as Uint8Array)).toBe('desktop b');
+			expect(dec((await w.drive.contentOf([...w.drive.files.values()].find((f) => w.drive.shown(f) === 'Inbox/b.md' && !f.trashed)!)) as Uint8Array)).toBe('desktop b');
 			expect(mobile.ops()).toEqual({ 'Inbox/b.md': 'modify' });
 			// the normal route still works and keeps both versions
 			await mobile.pull();

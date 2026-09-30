@@ -129,6 +129,7 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 				unrecordedEdits: unrecordedEditCandidates(t),
 				vaultEvents: t.vaultEventCount,
 				grantedScopes,
+				...(t.settings.e2eeEnabled === true && { encryption: t.e2ee ? ('unlocked' as const) : ('locked' as const) }),
 			},
 		});
 		new DoctorModal(t, renderReport(report)).open();

@@ -17,6 +17,7 @@ import { folderMimeType, unSplitPath } from './drive';
 import { isOwnPluginPath } from './own-plugin';
 import { sanitizeMessage } from './diagnostics';
 import { getDriveAgent, refreshAccessToken } from './requests';
+import { requireUnlocked } from './e2ee';
 
 export const HISTORY_DEFAULT_DAYS = 10;
 export const HISTORY_MIN_DAYS = 1;
@@ -71,6 +72,9 @@ export interface DriveEntry {
 	size?: number;
 }
 
+/** Value of the `history` / `vault` property: the vault name, or (encrypted vault) a hash that does not reveal it. */
+const vaultId = (t: ObsidianGoogleDrive) => requireUnlocked(t)?.vaultTag ?? t.app.vault.getName();
+
 const escapeQueryValue = (value: string) =>
 	value.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
 
@@ -123,11 +127,16 @@ export const decodePoint = async (
 };
 
 /** Fingerprint of what a restore point covers; two identical states give the same value. */
-export const signatureOf = async (entries: HistoryEntry[]) => {
+export const signatureOf = async (
+	entries: HistoryEntry[],
+	/** with encryption on: a keyed digest, so the stored signature cannot be used to test guesses about paths */
+	keyed?: (text: string) => Promise<string>,
+) => {
 	const text = entries
 		.map((e) => `${e.p}\t${e.f ? 'D' : 'F'}\t${e.c ? 1 : 0}\t${e.i}\t${e.m ?? e.r ?? ''}`)
 		.sort()
 		.join('\n');
+	if (keyed) return keyed(text);
 	const digest = await crypto.subtle.digest(
 		'SHA-256',
 		new TextEncoder().encode(text),
@@ -178,7 +187,8 @@ const listFiles = async (
 export const listDriveEntries = async (
 	t: ObsidianGoogleDrive,
 ): Promise<DriveEntry[]> => {
-	const vault = escapeQueryValue(t.app.vault.getName());
+	const vault = escapeQueryValue(vaultId(t));
+	const e = requireUnlocked(t);
 	const listed = await listFiles(
 		t,
 		`trashed=false and properties has { key='vault' and value='${vault}' }`,
@@ -186,7 +196,9 @@ export const listDriveEntries = async (
 	);
 	const entries: DriveEntry[] = [];
 	for (const file of listed) {
-		const properties = file.properties ?? {};
+		const properties = e
+			? await e.decodeProperties(file.properties ?? {})
+			: (file.properties ?? {});
 		if (properties.obsidian === 'vault' || properties.history) continue;
 		const path = unSplitPath(properties);
 		if (!path || isOwnPluginPath(t, path)) continue;
@@ -217,7 +229,7 @@ export const toHistoryEntries = (entries: DriveEntry[]): HistoryEntry[] =>
 	});
 
 const findHistoryFolder = async (t: ObsidianGoogleDrive) => {
-	const vault = escapeQueryValue(t.app.vault.getName());
+	const vault = escapeQueryValue(vaultId(t));
 	const folders = await listFiles(
 		t,
 		`trashed=false and properties has { key='history' and value='${vault}' } and properties has { key='kind' and value='folder' }`,
@@ -235,11 +247,12 @@ const findHistoryFolder = async (t: ObsidianGoogleDrive) => {
 const ensureHistoryFolder = async (t: ObsidianGoogleDrive) => {
 	const existing = await findHistoryFolder(t);
 	if (existing) return existing;
-	const vault = t.app.vault.getName();
+	const vault = vaultId(t);
 	const created = await getDriveAgent(t)
 		.post('drive/v3/files?fields=id', {
 			json: {
-				name: `${vault} - ${FOLDER_NAME}`,
+				// an encrypted vault's history folder does not carry the vault name
+				name: t.e2ee ? `${FOLDER_NAME} (encrypted)` : `${vault} - ${FOLDER_NAME}`,
 				mimeType: folderMimeType,
 				parents: ['root'],
 				properties: { history: vault, kind: 'folder' },
@@ -254,7 +267,7 @@ const ensureHistoryFolder = async (t: ObsidianGoogleDrive) => {
 export const listRestorePoints = async (
 	t: ObsidianGoogleDrive,
 ): Promise<RestorePointInfo[]> => {
-	const vault = escapeQueryValue(t.app.vault.getName());
+	const vault = escapeQueryValue(vaultId(t));
 	const files = await listFiles(
 		t,
 		`trashed=false and properties has { key='history' and value='${vault}' } and properties has { key='kind' and value='point' }`,
@@ -279,10 +292,13 @@ export const listRestorePoints = async (
 export const readRestorePoint = async (
 	t: ObsidianGoogleDrive,
 	id: string,
-): Promise<RestorePointData> =>
-	decodePoint(
-		await getDriveAgent(t).get(`drive/v3/files/${id}?alt=media`).arrayBuffer(),
-	);
+): Promise<RestorePointData> => {
+	const downloaded = await getDriveAgent(t)
+		.get(`drive/v3/files/${id}?alt=media`)
+		.arrayBuffer();
+	const e = requireUnlocked(t);
+	return decodePoint(e ? await e.decryptBlob(downloaded, 'restore-point') : downloaded);
+};
 
 /** A GET that reports failures as a status instead of throwing or showing a notice (used for probing). */
 const quietGet = async (t: ObsidianGoogleDrive, path: string) => {
@@ -376,7 +392,8 @@ export const recordRestorePoint = async (
 	now = Date.now(),
 ): Promise<RecordResult> => {
 	const entries = toHistoryEntries(await listDriveEntries(t));
-	const sig = await signatureOf(entries);
+	const e = requireUnlocked(t);
+	const sig = await signatureOf(entries, e?.digest);
 	const points = await listRestorePoints(t);
 	const newest = points[0];
 	if (newest && newest.sig === sig) {
@@ -387,13 +404,15 @@ export const recordRestorePoint = async (
 	const data: RestorePointData = {
 		v: 1,
 		t: now,
-		vault: t.app.vault.getName(),
+		vault: t.app.vault.getName(), // inside the (encrypted) file, not in the Drive metadata
 		app: t.manifest?.version ?? '',
 		e: entries,
 	};
-	const { bytes, gzip } = await encodePoint(data);
-	const mimeType = gzip ? 'application/gzip' : 'application/json';
-	const name = `restore-point-${stamp(now)}.json${gzip ? '.gz' : ''}`;
+	const encoded = await encodePoint(data);
+	const gzip = encoded.gzip;
+	const bytes = e ? await e.encryptBlob(encoded.bytes, 'restore-point') : encoded.bytes;
+	const mimeType = e ? 'application/octet-stream' : gzip ? 'application/gzip' : 'application/json';
+	const name = e ? `restore-point-${stamp(now)}.bin` : `restore-point-${stamp(now)}.json${gzip ? '.gz' : ''}`;
 	const parent = await ensureHistoryFolder(t);
 
 	const form = new FormData();
@@ -406,7 +425,7 @@ export const recordRestorePoint = async (
 					mimeType,
 					parents: [parent],
 					properties: {
-						history: t.app.vault.getName(),
+						history: vaultId(t),
 						kind: 'point',
 						createdAt: String(now),
 						n: String(entries.length),

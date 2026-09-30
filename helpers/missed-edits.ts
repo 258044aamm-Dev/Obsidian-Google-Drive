@@ -98,7 +98,7 @@ export const recordMissedEdits = async (
 			let differs = true;
 			if (index < MAX_COMPARED_EDITS) {
 				try {
-					const remote = await t.drive.getFile(id).arrayBuffer();
+					const remote = await t.drive.getFile(id, path).arrayBuffer();
 					if (remote) {
 						differs = !sameBytes(
 							await t.app.vault.readBinary(file),

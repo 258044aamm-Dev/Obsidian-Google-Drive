@@ -16,6 +16,8 @@ import {
 import { fixDrivePath } from './helpers/fix_drive_path';
 import { runSyncDoctor } from './helpers/doctor-command';
 import { installStatusBar, type StatusBar } from './helpers/status-bar';
+import { createKeyStore, loadEncryption, type E2ee, type KeyStore } from './helpers/e2ee';
+import { openChangePassphrase, openDisableEncryption, openEnableEncryption, openUnlockEncryption } from './helpers/e2ee-ui';
 import { createRestorePointNow, startVaultRestore } from './helpers/history-ui';
 import { HISTORY_MAX_DAYS, HISTORY_MIN_DAYS } from './helpers/history';
 import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
@@ -46,6 +48,18 @@ interface PluginSettings {
 	enableDiagnostics: boolean;
 	maskFilePaths: boolean;
 	lastInstalledVersion: string;
+	/** End-to-end encryption is on for this device (see helpers/e2ee.ts). */
+	e2eeEnabled: boolean;
+	/** Id of this device's key for the encrypted vault (the key itself is in the device's IndexedDB). */
+	e2eeKid: string;
+	/** The plain Drive link this device had before encryption was turned on, so turning it off can go back. */
+	e2eePlainLink?: {
+		rootFolderId: string;
+		driveIdToPath: Record<string, string>;
+		operations: Record<string, 'create' | 'delete' | 'modify'>;
+		lastSyncedAt: number;
+		changesToken: string;
+	};
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -66,6 +80,8 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	enableDiagnostics: false,
 	maskFilePaths: true,
 	lastInstalledVersion: '',
+	e2eeEnabled: false,
+	e2eeKid: '',
 };
 
 export default class ObsidianGoogleDrive extends Plugin {
@@ -84,6 +100,10 @@ export default class ObsidianGoogleDrive extends Plugin {
 	/** Create / modify / delete / rename events seen since load (shown by the Sync doctor). */
 	vaultEventCount = 0;
 	private statusBar?: StatusBar;
+	/** Encryption helper while end-to-end encryption is on and this device has the key. */
+	e2ee?: E2ee;
+	/** Where this device keeps the encryption key (IndexedDB; tests inject an in-memory one). */
+	keyStore: KeyStore = createKeyStore();
 	/** Config-folder files that this sync downloaded from Drive (so they must not count as changed on this device). */
 	private pulledConfigPaths?: Set<string>;
 
@@ -91,6 +111,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		const { vault } = this.app;
 
 		await this.loadSettings();
+		await loadEncryption(this);
 		this.diagnostics.enabled = this.settings.enableDiagnostics;
 		this.diagnostics.maskPaths = this.settings.maskFilePaths;
 
@@ -441,6 +462,13 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	async startSync(operationName = 'Syncing') {
+		if (this.settings.e2eeEnabled === true && !this.e2ee) {
+			new Notice(
+				'End-to-end encryption is on, but this device does not have the key. Enter the passphrase in the plugin settings first.',
+				8000,
+			);
+			throw new Error('Encryption key missing');
+		}
 		if (!(await checkConnection())) {
 			new Notice(
 				'You are not connected to the internet, so you cannot sync right now. Please try syncing once you have connection again.',
@@ -859,6 +887,38 @@ class SettingsTab extends PluginSettingTab {
 					pointBtn.addEventListener('click', () => {
 						void createRestorePointNow(this.plugin);
 					});
+				},
+			},
+			{
+				name: 'End-to-end encryption',
+				render: (setting) => {
+					setting.settingEl.empty();
+					setting.setName('End-to-end encryption');
+					const on = this.plugin.settings.e2eeEnabled === true;
+					const locked = on && !this.plugin.e2ee;
+					setting.setDesc(
+						!on
+							? 'Off. Turn it on to keep your notes and their names encrypted on Google Drive with a passphrase that only you know. It starts a NEW encrypted vault next to your current one. Do it on your main device first, then on the others.'
+							: locked
+								? 'On, but this device does not have the key. Sync is paused until you enter the passphrase.'
+								: 'On. Notes and their names are encrypted on this device before they reach Google Drive. Google Drive\'s web preview and search cannot read them. If you lose the passphrase, nobody can recover the notes.',
+					);
+					const btns = setting.settingEl.createDiv({
+						cls: 'setting-item-control',
+					});
+					const refresh = () => this.update();
+					const add = (text: string, run: () => void) =>
+						btns.createEl('button', { text }).addEventListener('click', run);
+					if (!on) {
+						add('Turn on...', () => openEnableEncryption(this.plugin, refresh));
+					} else {
+						if (locked) {
+							add('Enter passphrase...', () => openUnlockEncryption(this.plugin, refresh));
+						} else {
+							add('Change passphrase...', () => openChangePassphrase(this.plugin));
+						}
+						add('Turn off...', () => openDisableEncryption(this.plugin, refresh));
+					}
 				},
 			},
 			{

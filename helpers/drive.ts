@@ -1,7 +1,8 @@
 import type ObsidianGoogleDrive from '../main';
 import { getDriveAgent } from './requests';
+import { E2eeError, requireUnlocked } from './e2ee';
 import { isOwnPluginPath } from './own-plugin';
-import { requestUrl, TAbstractFile, TFolder } from 'obsidian';
+import { Notice, requestUrl, TAbstractFile, TFolder } from 'obsidian';
 
 export interface FileMetadata {
 	id: string;
@@ -119,8 +120,28 @@ export const unSplitPath = (properties: Record<string, string>) => {
 export const getDriveClient = (t: ObsidianGoogleDrive) => {
 	const drive = getDriveAgent(t);
 
-	const getQuery = (matches: QueryMatch[]) =>
-		encodeURIComponent(
+	/** The encryption helper while end-to-end encryption is on (throws if it is on but locked); undefined when it is off. */
+	const e2 = () => requireUnlocked(t);
+	/** Value of the `vault` property that marks this vault's items on Drive. */
+	const vaultValue = () => e2()?.vaultTag ?? t.app.vault.getName();
+
+	const getQuery = async (plainMatches: QueryMatch[]) => {
+		const e = e2();
+		const matches = e
+			? await Promise.all(
+					plainMatches.map(async (match) =>
+						match.properties
+							? {
+									...match,
+									properties: await e.encodeQueryProperties(
+										match.properties,
+									),
+								}
+							: match,
+					),
+				)
+			: plainMatches;
+		return encodeURIComponent(
 			`(${matches
 				.map((match) => {
 					const entries = Object.entries(match).flatMap(
@@ -141,8 +162,9 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 				})
 				.join(
 					' or ',
-				)}) and trashed=false and properties has { key='vault' and value='${escapeQueryValue(t.app.vault.getName())}' }`,
+				)}) and trashed=false and properties has { key='vault' and value='${escapeQueryValue(vaultValue())}' }`,
 		);
+	};
 
 	const paginateFiles = async ({
 		matches,
@@ -164,19 +186,18 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		pageSize?: number;
 		include?: (keyof FileMetadata)[];
 	}) => {
+		const query = matches
+			? await getQuery(matches)
+			: encodeURIComponent(
+					"trashed=false and properties has { key='vault' and value='" +
+						escapeQueryValue(vaultValue()) +
+						"'}",
+				);
 		const files = await drive
 			.get(
 				`drive/v3/files?fields=nextPageToken,files(${include.join(
 					',',
-				)})&pageSize=${pageSize}&q=${
-					matches
-						? getQuery(matches)
-						: encodeURIComponent(
-								"trashed=false and properties has { key='vault' and value='" +
-									escapeQueryValue(t.app.vault.getName()) +
-									"'}",
-							)
-				}${
+				)})&pageSize=${pageSize}&q=${query}${
 					matches?.find(({ query }) => query)
 						? ''
 						: '&orderBy=name' +
@@ -185,10 +206,41 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 			)
 			.json();
 		if (!files) return;
-		return files as {
+		const listing = files as {
 			nextPageToken?: string;
 			files: FileMetadata[];
 		};
+		const e = e2();
+		if (e && listing.files) {
+			try {
+				listing.files = await Promise.all(
+					listing.files.map(async (file: FileMetadata) =>
+						file.properties
+							? {
+									...file,
+									properties: await e.decodeProperties(
+										file.properties,
+									),
+								}
+							: file,
+					),
+				);
+			} catch (error) {
+				// A listing with a damaged entry is refused as a whole: treating the entry as
+				// "missing" could make Pull delete a real file on this device.
+				t.diagnostics.record({
+					phase: 'list-files',
+					operation: 'decode-listing',
+					message: error instanceof Error ? error.message : 'Could not read the encrypted listing.',
+				});
+				new Notice(
+					'Google Drive Sync: an encrypted item on Drive could not be verified, so nothing was synced. See the diagnostics.',
+					8000,
+				);
+				return;
+			}
+		}
+		return listing;
 	};
 
 	const searchFiles = async (
@@ -239,6 +291,10 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		);
 		if (!files) return;
 		if (!files.length) {
+			if (t.settings.e2eeEnabled === true) {
+				// an encrypted vault is only created by "Turn on encryption", never implicitly
+				return;
+			}
 			const rootFolder = await drive
 				.post(`drive/v3/files`, {
 					json: {
@@ -281,7 +337,12 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}
 
 		if (!properties) properties = {};
-		if (!properties.vault) properties.vault = t.app.vault.getName();
+		if (!properties.vault) properties.vault = vaultValue();
+		const e = e2();
+		if (e) {
+			properties = await e.encodeProperties(properties);
+			if (properties.path) name = properties.path;
+		}
 
 		const folder = await drive
 			.post(`drive/v3/files`, {
@@ -313,7 +374,24 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		if (!metadata) metadata = {};
 		if (!metadata.properties) metadata.properties = {};
 		if (!metadata.properties.vault) {
-			metadata.properties.vault = t.app.vault.getName();
+			metadata.properties.vault = vaultValue();
+		}
+		const e = e2();
+		if (e) {
+			const plainProperties = metadata.properties;
+			const path = unSplitPath(plainProperties);
+			if (!path) {
+				throw new E2eeError('Cannot encrypt a file without a path.', 'bad-properties');
+			}
+			file = new Blob(
+				[(await e.encryptFile(await file.arrayBuffer(), path)) as BlobPart],
+				{ type: 'application/octet-stream' },
+			);
+			metadata = {
+				...metadata,
+				properties: await e.encodeProperties(plainProperties),
+			};
+			if (metadata.properties?.path) name = metadata.properties.path;
 		}
 
 		const form = new FormData();
@@ -347,7 +425,19 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		id: string,
 		newContent: Blob,
 		newMetadata: Partial<Omit<FileMetadata, 'id'>> = {},
+		/** vault path of the file; needed while encryption is on (the content is bound to its path) */
+		path?: string,
 	) => {
+		const e = e2();
+		if (e) {
+			if (path === undefined) {
+				throw new E2eeError('Cannot encrypt an update without the file path.', 'bad-properties');
+			}
+			newContent = new Blob(
+				[(await e.encryptFile(await newContent.arrayBuffer(), path)) as BlobPart],
+				{ type: 'application/octet-stream' },
+			);
+		}
 		const form = new FormData();
 		form.append(
 			'metadata',
@@ -389,11 +479,35 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		return true;
 	};
 
-	const getFile = (id: string) =>
-		drive.get(`drive/v3/files/${id}?alt=media&acknowledgeAbuse=true`);
+	/** `path` is the vault path of the file; needed while encryption is on (the content is checked against it). */
+	const getFile = (id: string, path?: string) => {
+		const response = drive.get(
+			`drive/v3/files/${id}?alt=media&acknowledgeAbuse=true`,
+		);
+		const e = e2();
+		if (!e) return response;
+		return {
+			arrayBuffer: async () => {
+				if (path === undefined) {
+					throw new E2eeError('Cannot check a download without the file path.', 'bad-properties');
+				}
+				const downloaded = await response.arrayBuffer();
+				if (!downloaded) return downloaded; // the download itself failed: same result as without encryption
+				return e.decryptFile(downloaded, path);
+			},
+		};
+	};
 
-	const getFileMetadata = (id: string) =>
-		drive.get(`drive/v3/files/${id}`).json<FileMetadata>();
+	const getFileMetadata = async (id: string) => {
+		const metadata = await drive
+			.get(`drive/v3/files/${id}`)
+			.json<FileMetadata>();
+		const e = e2();
+		if (e && metadata?.properties) {
+			return { ...metadata, properties: await e.decodeProperties(metadata.properties) };
+		}
+		return metadata;
+	};
 
 	const idFromPath = async (path: string) => {
 		const files = await searchFiles({
@@ -527,7 +641,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 	const listTrashedFileIds = async () => {
 		const query = encodeURIComponent(
 			"trashed=true and properties has { key='vault' and value='" +
-				escapeQueryValue(t.app.vault.getName()) +
+				escapeQueryValue(vaultValue()) +
 				"' }",
 		);
 		const ids: string[] = [];

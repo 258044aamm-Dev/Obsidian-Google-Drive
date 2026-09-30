@@ -85,7 +85,9 @@ You chose "type it once per device and keep it there". I propose the refinement 
 
 - The encrypted vault has its **own root folder**, tagged `vault = <SHA-256 of the vault name>` (no plain name) and `e2ee = 1`, holding: salt, iteration count, wrapped DEK, key-check blob, format version. The **original plugin looks for `vault = <plain name>`, so it can never see, read or overwrite the encrypted vault**, and cannot be confused by it.
 - Your current plain Drive vault is **not touched**. When you are happy, delete it yourself in Drive (and empty the Trash: old versions of plain files stay there for about 30 days).
-- Switching a device to encryption is a **new link**, not a conversion: it resets that device's saved Drive ids, sync position and pending list, marks the local files for upload, and keeps the vault files as they are. A device that is not switched keeps using the plain Drive vault. The README will say: **switch the phone first (Pull from the encrypted vault), then the desktop pushes.**
+- Switching a device to encryption is a **new link**, not a conversion: it resets that device's saved Drive ids, sync position and pending list, marks the local files for upload, and keeps the vault files as they are. A device that is not switched keeps using the plain Drive vault. The README says: **switch the desktop first** (it creates the encrypted Drive vault and its next Push uploads everything, encrypted), **then switch each other device** (it joins with the same passphrase and Pulls).
+
+> **Correction (made while implementing 3.6.0):** this design first said "switch the phone first". That was wrong: the encrypted Drive vault is empty until some device pushes into it, so a phone switched first would have nothing to pull. The device that holds the notes you trust (the desktop) goes first.
 - The README's "download the vault folder from Drive" fallback for a new device **does not work** for an encrypted vault. The only way in is the plugin plus the passphrase.
 
 ### 4.5 Version history
@@ -137,3 +139,12 @@ You chose "type it once per device and keep it there". I propose the refinement 
 | D6 | Weak passphrase | Require at least 12 characters and show a strength hint | No minimum |
 | D7 | Optional **recovery key** (random, shown once, can also unlock) | Not in the first release | Include it now |
 | D8 | Version number | 3.6.0, opt-in, off by default | 4.0.0 |
+
+
+## 9. Implementation notes (3.6.0)
+
+- Files: `helpers/crypto.ts` (formats and keys), `helpers/e2ee.ts` (key storage, enable / join / unlock / disable / change passphrase), `helpers/e2ee-ui.ts` (dialogs). Drive calls in `helpers/drive.ts` and `helpers/history.ts` encode and decode through one helper each; with encryption off those code paths are unchanged.
+- The overhead per file is **33 bytes** (4 magic + 1 version + 12 nonce + 16 tag), not 28 as written in section 4.
+- Pull: a file that fails its integrity check is not written, every other file still downloads, the Pull then reports the failed files and stops without moving the sync position, so the next Pull tries again.
+- A restore preview can list files that already match, because encrypted copies never share a checksum.
+- Non-path properties stay readable on Drive: `config` (true for files inside the settings folder) and `vault` (a hash of the vault name), and the restore point's kind and time.

@@ -29,6 +29,27 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.6.0: end-to-end encryption (optional)
+
+With encryption on, your notes and their **file and folder names** are encrypted on your device before they go to Google Drive. Drive stores random names and unreadable data. It is **off by default**; nothing changes unless you turn it on in *Settings > Google Drive Sync > End-to-end encryption*.
+
+**How to switch (desktop first):**
+
+1. On your **desktop** (the device whose notes you trust): choose *Turn on...*, type a long passphrase twice. A new encrypted vault folder is created on Drive next to your current one. Then press **Push**: everything is uploaded, encrypted. Your current Drive vault is not touched.
+2. On each **other device** (phone, laptop): choose *Turn on...* and type the **same passphrase**. The device joins the encrypted vault. Then press **Pull**.
+3. Check the result before you delete anything. The old plain vault on Drive stays until you delete it yourself.
+
+**What you should know:**
+
+- **If you lose the passphrase, the encrypted notes cannot be recovered**, not by you and not by anyone else. Keep it in a password manager.
+- The passphrase is typed once per device; the key stays in the app's storage on that device. If the app data is cleared, sync pauses until you type the passphrase again.
+- A file on Drive that was changed, damaged or swapped is **never written into your vault**. Pull lists it, pulls the other files, and tries again next time.
+- *Change passphrase...* needs no re-upload; devices that already work keep working. *Turn off...* returns the device to the plain vault it used before.
+- Google still sees how many files you have, the folder shape, file sizes and modification times. Someone with access to your Google account could delete or roll back files (the plugin cannot prove otherwise). A short passphrase can be guessed offline: use 4 or more random words.
+- Google Drive's web preview and search cannot read encrypted notes, and the "download the vault folder" way to set up a new device (below) does not work for an encrypted vault: use *Turn on...* on the new device.
+- Version history (restore points) works and is encrypted as well.
+- Tested in simulation only, not yet against real Google Drive or a real phone. Try it with a copy of your vault first.
+
 ## What is new in 3.5.2: Sync doctor shows the Google permission
 
 **Sync doctor** now asks Google which permission this device's token really has (one read-only request to `oauth2.googleapis.com/tokeninfo`) and prints it, for example `Google permission: drive.file. This plugin can only see and change Drive files it created itself, not the rest of your Drive.` If a token ever has a broad Drive permission (`drive`, `drive.readonly`, `drive.metadata` ...), the report warns that it can see your whole Drive and tells you to revoke it at myaccount.google.com/connections and sign in again. The sign-in page of this plugin only asks for `drive.file`. The token itself is never shown in the report.

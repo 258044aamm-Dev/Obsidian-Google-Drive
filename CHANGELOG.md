@@ -4,6 +4,30 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.6.0 - 2026-09-30
+
+### Added
+- **End-to-end encryption (optional, off by default).** File contents **and** file and folder names are encrypted on your device before they are sent to Google Drive. Google, and anyone who gets into your Google account, then see only random names and unreadable data. Turn it on in the plugin settings under *End-to-end encryption*.
+  - It starts a **new** encrypted vault folder on Drive next to your current one. Your current Drive vault is not changed or deleted, and a device that you do not switch keeps using it.
+  - **Switch the desktop first**: it creates the encrypted vault and its next Push uploads everything, encrypted. Then switch each other device with the same passphrase and press Pull.
+  - AES-256-GCM, key from your passphrase (PBKDF2-SHA-256, 600,000 rounds) wrapping a random data key. Each file is bound to its path, so Drive cannot swap or move files without the plugin noticing. A changed, damaged or swapped file is never written into your vault: Pull reports it, pulls the rest and tries again next time.
+  - The key stays on the device (non-extractable, in the app's own storage) after you type the passphrase once. A device that lost it syncs nothing until you enter the passphrase again. **A lost passphrase cannot be recovered.**
+  - Change the passphrase without re-uploading anything. Turn encryption off to go back to the plain vault.
+  - Version history works with encryption: restore points are encrypted too.
+  - Sync doctor reports whether encryption is on and whether this device has the key.
+
+### Changed
+- (Only while encryption is on) Drive web preview and Drive search cannot read your notes; the README's "download the vault folder" method for new devices does not work for an encrypted vault.
+- `updateFile` and `getFile` take the vault path (used to check encrypted files); nothing changes when encryption is off.
+
+### Tests
+- New `tests/crypto.test.ts` (round trips, wrong passphrase, every changed byte, swapped paths, Unicode and long paths) and `tests/sim/e2ee.test.ts` (nothing readable on Drive, changed / swapped / planted files, wrong and missing key, changing the passphrase, switching on and off, version history, doctor).
+- The whole two-device regression suite also runs with encryption on (`npm run test:e2ee` runs every simulated scenario that way).
+
+### Limits
+- Google still sees how many files you have, the folder shape, file sizes (+33 bytes), and when files change. A Drive account holder can delete or roll back files without the plugin being able to tell. A weak passphrase can be guessed offline (the salt and wrapped key are stored on Drive): use a long one.
+- Not tested against real Google Drive or real Obsidian on a phone (simulation only). Try it on a copy of your vault first.
+
 ## 3.5.2 - 2026-09-30
 
 ### Added

@@ -8,6 +8,7 @@ import {
 	unSplitPath,
 } from './drive';
 import { refreshAccessToken } from './requests';
+import { E2eeError } from './crypto';
 import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
 import {
@@ -417,7 +418,7 @@ export const pull = async (
 					return;
 				}
 				const driveContent = await t.drive
-					.getFile(file.id)
+					.getFile(file.id, path)
 					.arrayBuffer();
 				if (sameBytes(await adapter.readBinary(path), driveContent)) {
 					return;
@@ -426,8 +427,10 @@ export const pull = async (
 				if (saved.created) conflictCopies.push(saved.path);
 			};
 
-			await batchAsync(
-				newNotes.map((file: FileMetadata) => async () => {
+			// Encrypted vault: a file that fails its integrity check is not written; the others still download.
+			const refused: string[] = [];
+			const downloadOne = async (file: FileMetadata) => {
+				{
 					const path = unSplitPath(file.properties);
 					const localFile =
 						vault.getFileByPath(path) ||
@@ -448,7 +451,7 @@ export const pull = async (
 					}
 
 					const content = await t.drive
-						.getFile(file.id)
+						.getFile(file.id, path)
 						.arrayBuffer();
 
 					syncNotice?.setMessage(
@@ -464,8 +467,33 @@ export const pull = async (
 					}
 
 					return t.upsertFile(path, content, file.modifiedTime);
+				}
+			};
+
+			await batchAsync(
+				newNotes.map((file: FileMetadata) => async () => {
+					try {
+						return await downloadOne(file);
+					} catch (error) {
+						if (!(error instanceof E2eeError)) throw error;
+						refused.push(unSplitPath(file.properties));
+					}
 				}),
 			);
+
+			if (refused.length > 0) {
+				const shown =
+					refused.slice(0, 5).join(', ') +
+					(refused.length > 5 ? ', ...' : '');
+				new Notice(
+					`${refused.length} file(s) on Drive failed the encryption integrity check and were NOT used (changed, damaged or swapped): ${shown}. The other files were pulled. Nothing was overwritten.`,
+					0,
+				);
+				throw new E2eeError(
+					`${refused.length} file(s) failed the encryption integrity check: ${shown}`,
+					'corrupt',
+				);
+			}
 		};
 
 		await t.diagnostics.withContext(

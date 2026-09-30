@@ -11,9 +11,9 @@ import { TFile } from './obsidian-mock';
 import { buildDoctorReport, renderReport } from '../../helpers/doctor';
 import { editedSinceLastSync } from '../../helpers/missed-edits';
 
-const driveText = (w: any, path: string) => {
-	const f = [...w.drive.files.values()].find((x: any) => x.properties.path === path && !x.trashed);
-	return f ? dec(f.content) : undefined;
+const driveText = async (w: any, path: string) => {
+	const f = [...w.drive.files.values()].find((x: any) => w.drive.shown(x) === path && !x.trashed);
+	return f ? dec(await w.drive.contentOf(f)) : undefined;
 };
 const downloads = () => netLog.filter((l: string) => l.includes('alt=media')).length;
 
@@ -33,7 +33,7 @@ describe.each([true, false])('missed edits (deleteToTrash=%s)', (trash) => {
 		await editWithoutEvent(mobile, 'Inbox/a.md', 'edited, event lost');
 		expect(mobile.ops()).toEqual({});
 		await mobile.push();
-		expect(driveText(w, 'Inbox/a.md')).toBe('edited, event lost');
+		expect(await driveText(w, 'Inbox/a.md')).toBe('edited, event lost');
 		expect(notices.some((n) => n.includes('1 file synced'))).toBe(true);
 		expect(mobile.ops()).toEqual({});
 		expect(same(mobile.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
@@ -44,8 +44,8 @@ describe.each([true, false])('missed edits (deleteToTrash=%s)', (trash) => {
 		await editWithoutEvent(mobile, 'Inbox/a.md', 'A2');
 		await editWithoutEvent(mobile, 'Projects/Alpha/plan.md', 'PLAN2');
 		await mobile.push();
-		expect(driveText(w, 'Inbox/a.md')).toBe('A2');
-		expect(driveText(w, 'Projects/Alpha/plan.md')).toBe('PLAN2');
+		expect(await driveText(w, 'Inbox/a.md')).toBe('A2');
+		expect(await driveText(w, 'Projects/Alpha/plan.md')).toBe('PLAN2');
 		expect(notices.some((n) => n.includes('2 files synced'))).toBe(true);
 	});
 
@@ -74,7 +74,7 @@ describe.each([true, false])('missed edits (deleteToTrash=%s)', (trash) => {
 		await sleep(20);
 		netLog.length = 0;
 		await mobile.push();
-		expect(driveText(w, 'Inbox/a.md')).toBe('normal edit');
+		expect(await driveText(w, 'Inbox/a.md')).toBe('normal edit');
 		expect(downloads()).toBe(0);
 	});
 
@@ -107,7 +107,7 @@ describe.each([true, false])('missed edits (deleteToTrash=%s)', (trash) => {
 		await sleep(20);
 		netLog.length = 0;
 		await mobile.push();
-		for (let i = 0; i < 60; i++) expect(driveText(w, `Bulk/n${i}.md`)).toBe(`v2 ${i}`);
+		for (let i = 0; i < 60; i++) expect(await driveText(w, `Bulk/n${i}.md`)).toBe(`v2 ${i}`);
 		expect(downloads()).toBe(50); // the first 50 are compared, the rest are added as they are
 	});
 

@@ -193,12 +193,16 @@ export const applyRestorePlan = async (
 		let done = 0;
 
 		const writeOne = async ({ item, created }: { item: PlanItem; created: boolean }) => {
-			const data = await downloadRevision(t, item.id, item.rev);
-			if (item.size !== undefined && data.byteLength !== item.size) {
+			const downloaded = await downloadRevision(t, item.id, item.rev);
+			// the size in the restore point is the size on Drive (encrypted bytes when encryption is on)
+			if (item.size !== undefined && downloaded.byteLength !== item.size) {
 				throw new Error(
-					`the downloaded old version has ${data.byteLength} bytes, expected ${item.size}`,
+					`the downloaded old version has ${downloaded.byteLength} bytes, expected ${item.size}`,
 				);
 			}
+			const data = t.e2ee
+				? await t.e2ee.decryptFile(downloaded, item.path)
+				: downloaded;
 			if (isConfigPath(t, item.path)) {
 				await ensureAdapterFolders(t, parentOf(item.path));
 				// A current modification time makes the next Push include the file.

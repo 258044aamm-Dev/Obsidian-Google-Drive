@@ -246,7 +246,7 @@ export class ConfirmUndoModal extends Modal {
 		await batchAsync(
 			deletedFiles.map((path) => async () => {
 				const onlineFile = await this.t.drive
-					.getFile(this.filePathToId[path] as string)
+					.getFile(this.filePathToId[path] as string, path)
 					.arrayBuffer();
 				if (!onlineFile) {
 					new Notice(
@@ -276,7 +276,7 @@ export class ConfirmUndoModal extends Modal {
 
 		const [onlineFile, metadata] = await Promise.all([
 			this.t.drive
-				.getFile(this.filePathToId[path] as string)
+				.getFile(this.filePathToId[path] as string, path)
 				.arrayBuffer(),
 			this.t.drive.getFileMetadata(this.filePathToId[path] as string),
 		]);
@@ -540,6 +540,7 @@ export const push = async (
 							pathToId[file.path] as string,
 							new Blob([await vault.readBinary(file)]),
 							{ modifiedTime: new Date().toISOString() },
+							file.path,
 						);
 					if (!id) {
 						new Notice(
@@ -618,6 +619,7 @@ export const push = async (
 						pathsToIds[path],
 						new Blob([await adapter.readBinary(path)]),
 						{ modifiedTime: new Date().toISOString() },
+						path,
 					);
 					return;
 				}

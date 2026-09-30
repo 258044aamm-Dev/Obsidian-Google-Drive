@@ -15,8 +15,8 @@ const enc = (s: string) => new TextEncoder().encode(s).buffer;
 const driveConfigRevisions = (w: any) =>
 	Object.fromEntries(
 		[...w.drive.files.values()]
-			.filter((f: any) => !f.trashed && f.revisions.length && /^\.obsidian\/(app\.json|plugins\/foo\/)/.test(f.properties?.path ?? ''))
-			.map((f: any) => [f.properties.path, f.revisions.length]),
+			.filter((f: any) => !f.trashed && f.revisions.length && /^\.obsidian\/(app\.json|plugins\/foo\/)/.test(w.drive.shown(f) ?? ''))
+			.map((f: any) => [w.drive.shown(f), f.revisions.length]),
 	);
 
 const newSetup = async () => {

@@ -23,6 +23,8 @@ const FOLDER = 'application/vnd.google-apps.folder';
 const unesc = (s: string) => s.replace(/\\(['\\])/g, '$1');
 
 export class FakeDrive {
+	/** the drive of the world created last (lets small test helpers read files without being handed the world) */
+	static current?: FakeDrive;
 	files = new Map<string, DFile>();
 	changes: Change[] = [];
 	seq = 1;
@@ -47,6 +49,7 @@ export class FakeDrive {
 	private revSeq = 1;
 	constructor(vaultName: string) {
 		this.vaultName = vaultName;
+		FakeDrive.current = this;
 		this.rootId = this.add({
 			name: vaultName,
 			mimeType: FOLDER,
@@ -131,18 +134,30 @@ export class FakeDrive {
 		if (f.mimeType === FOLDER) for (const c of [...this.files.values()]) if (c.parents.includes(id)) this.untrash(c.id);
 		return true;
 	}
+	/** Encrypted vaults only: path id -> real path, recorded by the test harness, so snapshots stay readable. */
+	plainPaths = new Map<string, string>();
+	/** Encrypted vaults only: opens a file's stored bytes (set by the harness). */
+	decryptContent?: (content: Uint8Array, f: DFile) => Promise<Uint8Array>;
+	async contentOf(f: DFile) {
+		if (!this.decryptContent || !f.content) return f.content;
+		return this.decryptContent(f.content, f);
+	}
+	shown(f: DFile) {
+		const path = f.properties.path;
+		return path === undefined ? path : (this.plainPaths.get(path) ?? path);
+	}
 	/** what the user sees in Drive: path -> (folder | size) */
 	snapshot() {
 		return [...this.files.values()]
 			.filter((f) => f.properties.obsidian !== 'vault' && !f.properties.history && !f.trashed)
-			.map((f) => (f.mimeType === FOLDER ? f.properties.path + '/' : f.properties.path))
+			.map((f) => (f.mimeType === FOLDER ? this.shown(f) + '/' : this.shown(f)))
 			.map((p) => p ?? '?')
 			.sort();
 	}
 	snapshotNonConfig() {
 		return [...this.files.values()]
 			.filter((f) => f.properties.obsidian !== 'vault' && !f.properties.history && f.properties.config !== 'true' && !f.trashed)
-			.map((f) => String(f.mimeType === FOLDER ? f.properties.path + '/' : f.properties.path))
+			.map((f) => String(f.mimeType === FOLDER ? this.shown(f) + '/' : this.shown(f)))
 			.sort();
 	}
 

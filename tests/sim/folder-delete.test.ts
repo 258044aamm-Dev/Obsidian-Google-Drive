@@ -13,7 +13,7 @@ const FOLDER = 'application/vnd.google-apps.folder';
 const vaultFolders = (w: any) =>
 	[...w.drive.files.values()]
 		.filter((f: any) => f.mimeType === FOLDER && !f.trashed && f.properties.obsidian !== 'vault' && !f.properties.history)
-		.map((f: any) => f.name)
+		.map((f: any) => String(w.drive.shown(f) ?? f.name).split('/').pop() as string)
 		.sort();
 const emptied = (d: any) => d.vault.tree().filter((p: string) => p.endsWith('/') && /Alpha|Beta|notes/.test(p));
 

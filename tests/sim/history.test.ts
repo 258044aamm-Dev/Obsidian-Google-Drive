@@ -7,8 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.stubGlobal('window', globalThis);
 vi.mock('obsidian', async () => await import('./obsidian-mock'));
 import { sleep, dec, enc, notices, netLog } from './world';
-import { setup, same, simDefaults } from './scenario-helpers';
+import { setup, same, simDefaults, simE2ee } from './scenario-helpers';
 import { TFile } from './obsidian-mock';
+import { FakeDrive } from './fake-drive';
 import { decodePoint, historyRetentionDays, listRestorePoints, recordRestorePoint, type RestorePointData } from '../../helpers/history';
 import { applyRestorePlan, buildRestorePlan, prepareRestore, restoreBlocker } from '../../helpers/history-restore';
 import { createRestorePointNow } from '../../helpers/history-ui';
@@ -19,7 +20,7 @@ const pointFiles = (s: Setup) =>
 	[...s.w.drive.files.values()]
 		.filter((f) => f.properties.history && f.properties.kind === 'point' && !f.trashed)
 		.sort((a, b) => Number(a.properties.createdAt) - Number(b.properties.createdAt));
-const manifest = async (f: { content: Uint8Array | null }): Promise<RestorePointData> => decodePoint((f.content as Uint8Array).slice().buffer);
+const manifest = async (f: { content: Uint8Array | null }): Promise<RestorePointData> => decodePoint(((await FakeDrive.current!.contentOf(f as any)) as Uint8Array).slice().buffer);
 const infos = (s: Setup) => listRestorePoints(s.desktop.plugin);
 const read = (d: { vault: { disk: Map<string, any> } }, p: string) => {
 	const f = d.vault.disk.get(p);
@@ -48,7 +49,7 @@ describe.each([true, false])('version history (deleteToTrash=%s)', (trash) => {
 			const a = first.e.find((e) => e.p === 'Inbox/a.md')!;
 			expect(a.r).toBeTruthy();
 			expect(a.m).toMatch(/^[0-9a-f]{32}$/);
-			expect(a.s).toBe(1);
+			expect(a.s).toBe(simE2ee.on ? 1 + 33 : 1); // the size on Drive: encrypted files are 33 bytes larger
 			expect(first.e.find((e) => e.p === 'Projects/Alpha')?.f).toBe(1);
 			expect(first.e.map((e) => e.p)).not.toContain('V'); // not the root folder
 			expect(first.e.filter((e) => !e.f)).toHaveLength(8);
@@ -74,7 +75,8 @@ describe.each([true, false])('version history (deleteToTrash=%s)', (trash) => {
 			expect(point.properties.vault).toBeUndefined();
 			expect(point.properties.obsidian).toBeUndefined();
 			const folder = s.w.drive.files.get(point.parents[0]!)!;
-			expect(folder.properties.history).toBe('V');
+			if (simE2ee.on) expect(folder.properties.history).not.toContain('V'); // a hash, not the vault name
+			else expect(folder.properties.history).toBe('V');
 			expect(folder.properties.vault).toBeUndefined();
 			expect(folder.parents).toEqual(['root']); // beside the vault folder, never inside it (README: new devices download that folder)
 			expect(s.w.drive.snapshot().some((p) => p.includes('restore-point') || p === '?')).toBe(false);
@@ -118,8 +120,8 @@ describe.each([true, false])('version history (deleteToTrash=%s)', (trash) => {
 			await s.desktop.push();
 			expect(s.desktop.ops()).toEqual({});
 			expect(pointFiles(s)).toHaveLength(1); // only the one from setup
-			const a = [...s.w.drive.files.values()].find((f) => f.properties.path === 'Inbox/a.md' && !f.trashed)!;
-			expect(dec(a.content as Uint8Array)).toBe('a2');
+			const a = [...s.w.drive.files.values()].find((f) => s.w.drive.shown(f) === 'Inbox/a.md' && !f.trashed)!;
+			expect(dec((await s.w.drive.contentOf(a)) as Uint8Array)).toBe('a2');
 			expect(notices.join('\n')).toMatch(/restore point failed/i);
 			// the next Push saves one again
 			await edit(s, 'Inbox/b.md', 'b2');
@@ -354,7 +356,9 @@ describe.each([true, false])('version history (deleteToTrash=%s)', (trash) => {
 			// Push what was done, run the restore again, and it completes
 			await s.desktop.push();
 			const again = await restoreTo(s, 0);
-			expect(again.built.plan.revert.map((i) => i.path)).toEqual([failedPath]);
+			// encrypted copies never share a checksum, so with encryption on the plan may also list files that already match
+			if (simE2ee.on) expect(again.built.plan.revert.map((i) => i.path)).toContain(failedPath);
+			else expect(again.built.plan.revert.map((i) => i.path)).toEqual([failedPath]);
 			await applyRestorePlan(s.desktop.plugin, again.built.plan);
 			expect(read(s.desktop, 'Inbox/a.md')).toBe('a');
 			expect(read(s.desktop, 'Inbox/b.md')).toBe('b');
@@ -404,8 +408,8 @@ describe.each([true, false])('version history (deleteToTrash=%s)', (trash) => {
 			expect(read(s.desktop, '.obsidian/newplugin.json')).toBe('{"later":1}'); // not in the point: left alone
 			expect(s.desktop.vault.disk.get('.obsidian/app.json')!.mtime).toBeGreaterThan(lastSynced);
 			await s.desktop.push();
-			const driveCfg = [...s.w.drive.files.values()].find((f) => f.properties.path === '.obsidian/app.json' && !f.trashed)!;
-			expect(dec(driveCfg.content as Uint8Array)).toBe('{"v":1}');
+			const driveCfg = [...s.w.drive.files.values()].find((f) => s.w.drive.shown(f) === '.obsidian/app.json' && !f.trashed)!;
+			expect(dec((await s.w.drive.contentOf(driveCfg)) as Uint8Array)).toBe('{"v":1}');
 		});
 
 		it('a file or folder standing where the other kind used to be is skipped, not overwritten', async () => {

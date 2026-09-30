@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.stubGlobal('window', globalThis);
 vi.mock('obsidian', async () => await import('./obsidian-mock'));
 import { sleep, dec, netLog } from './world';
-import { setup, desktopCleanup, same, simDefaults } from './scenario-helpers';
+import { setup, desktopCleanup, same, simDefaults, simE2ee } from './scenario-helpers';
 import { TFile, modalTexts } from './obsidian-mock';
 import { runSyncDoctor } from '../../helpers/doctor-command';
 
@@ -20,8 +20,10 @@ describe.each([
 	[true, true],
 	[false, true],
 	[true, false],
-])('sync regression (two devices, fake Drive), deleteToTrash=%s, historyEnabled=%s', (trash, history) => {
+	[true, true, true],
+])('sync regression (two devices, fake Drive), deleteToTrash=%s, historyEnabled=%s, e2ee=%s', (trash, history, e2ee = false) => {
 	beforeEach(() => {
+		simE2ee.on = e2ee;
 		simDefaults.deleteToTrash = trash;
 		simDefaults.historyEnabled = history;
 	});
@@ -156,7 +158,7 @@ describe.each([
 		const driveConfigPaths = (w: any) =>
 			[...w.drive.files.values()]
 				.filter((f: any) => f.properties.config === 'true')
-				.map((f: any) => f.properties.path as string);
+				.map((f: any) => w.drive.shown(f) as string);
 
 		it('push does not upload main.js/manifest.json/data.json, but still syncs other plugins and config files', async () => {
 			const { w, desktop } = await setup();
@@ -307,8 +309,8 @@ describe.each([
 			expect(w.drive.snapshotNonConfig()).toContain('Projects/Alpha/phone-only.md');
 			expect(w.drive.snapshotNonConfig()).not.toContain('Archive/');
 			expect(w.drive.snapshotNonConfig()).not.toContain('Archive/old.md');
-			const plan = [...w.drive.files.values()].find((f) => !f.trashed && f.properties.path === 'Projects/Alpha/plan.md');
-			expect(dec(plan!.content!)).toBe('edited on phone');
+			const plan = [...w.drive.files.values()].find((f) => !f.trashed && w.drive.shown(f) === 'Projects/Alpha/plan.md');
+			expect(dec((await w.drive.contentOf(plan!))!)).toBe('edited on phone');
 			expect(same(mobile.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
 		});
 

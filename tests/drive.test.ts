@@ -129,6 +129,23 @@ describe('Drive batch deletion', () => {
 			headers: {},
 			arrayBuffer: new ArrayBuffer(0),
 			json: {},
+			text: ['HTTP/1.1 204 No Content', 'HTTP/1.1 403 Forbidden'].join(
+				'\r\n',
+			),
+		});
+		const drive = getDriveClient(createPlugin());
+
+		await expect(
+			drive.batchDelete(['file-1', 'forbidden-file']),
+		).resolves.toBeUndefined();
+	});
+
+	it('treats a 404 (already deleted) as success so stale ids cannot wedge a push', async () => {
+		requestUrl.mockResolvedValueOnce({
+			status: 200,
+			headers: {},
+			arrayBuffer: new ArrayBuffer(0),
+			json: {},
 			text: ['HTTP/1.1 204 No Content', 'HTTP/1.1 404 Not Found'].join(
 				'\r\n',
 			),
@@ -137,7 +154,7 @@ describe('Drive batch deletion', () => {
 
 		await expect(
 			drive.batchDelete(['file-1', 'missing-file']),
-		).resolves.toBeUndefined();
+		).resolves.toBe(true);
 	});
 });
 

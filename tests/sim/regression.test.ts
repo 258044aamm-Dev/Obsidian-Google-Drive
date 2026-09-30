@@ -139,6 +139,59 @@ describe('sync regression (two devices, fake Drive)', () => {
 		expect(same(mobile.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
 	});
 
+	describe("the plugin's own folder is never synced", () => {
+		const own = '.obsidian/plugins/google-drive-sync';
+		const driveConfigPaths = (w: any) =>
+			[...w.drive.files.values()]
+				.filter((f: any) => f.properties.config === 'true')
+				.map((f: any) => f.properties.path as string);
+
+		it('push does not upload main.js/manifest.json/data.json, but still syncs other plugins and config files', async () => {
+			const { w, desktop } = await setup();
+			const disk = desktop.vault.disk as Map<string, any>;
+			disk.set('.obsidian/plugins/other', { type: 'folder', mtime: Date.now() });
+			disk.set('.obsidian/plugins/other/main.js', { type: 'file', data: new Uint8Array([1, 2, 3]), mtime: Date.now() + 1000 });
+			disk.set(`${own}/data.json`, { type: 'file', data: new Uint8Array([123, 125]), mtime: Date.now() + 1000 });
+			disk.set(`${own}/main.js`, { type: 'file', data: new Uint8Array([9]), mtime: Date.now() + 1000 });
+			await desktop.vault.create('Inbox/trigger.md', 't');
+			await sleep(20);
+			await desktop.push();
+			const cfg = driveConfigPaths(w);
+			expect(cfg.filter((p) => p.startsWith(own))).toEqual([]);
+			expect(cfg).toContain('.obsidian/plugins/other/main.js');
+		});
+
+		it('pull neither overwrites nor deletes it when another device (e.g. upstream) put it on Drive', async () => {
+			const { w, mobile } = await setup();
+			const root = w.drive.rootId;
+			const folderIds: Record<string, string> = {};
+			let parent = root;
+			let acc = '';
+			for (const seg of ['.obsidian', 'plugins', 'google-drive-sync']) {
+				acc = acc ? `${acc}/${seg}` : seg;
+				parent = folderIds[acc] = w.drive.add({
+					name: seg,
+					mimeType: 'application/vnd.google-apps.folder',
+					parents: [parent],
+					properties: { path: acc, config: 'true', vault: 'V' },
+				});
+			}
+			const fileId = w.drive.add({
+				name: 'main.js',
+				parents: [parent],
+				properties: { path: `${own}/main.js`, config: 'true', vault: 'V' },
+				content: new Uint8Array([70, 79, 82, 69, 73, 71, 78]),
+				modifiedTime: new Date(Date.now() + 5000).toISOString(),
+			});
+			await mobile.pull();
+			const local = () => (mobile.vault.disk as Map<string, any>).get(`${own}/main.js`)?.data;
+			expect(dec(local())).toBe('//plugin');
+			w.drive.remove(fileId);
+			await mobile.pull();
+			expect(dec(local())).toBe('//plugin');
+		});
+	});
+
 	// ---- known limitations of the legacy design, fixed by the state-based engine (P2-P6) ----
 	it.fails('S4 phone clock ahead by 60s still receives a file pushed by the desktop', async () => {
 		const { desktop, mobile } = await setup();

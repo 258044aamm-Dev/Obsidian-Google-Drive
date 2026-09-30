@@ -9,6 +9,7 @@ import {
 	unSplitPath,
 } from './drive';
 import { pull } from './pull';
+import { isOwnPluginPath } from './own-plugin';
 import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
 
@@ -340,6 +341,8 @@ export const push = async (
 		await Promise.all(
 			configOnDrive.map(async ({ properties }) => {
 				const path = unSplitPath(properties);
+				// Config files of this plugin itself are not managed by sync.
+				if (isOwnPluginPath(t, path)) return;
 				if (!(await adapter.exists(path))) {
 					deletes.push([path, 'delete']);
 				}
@@ -582,14 +585,6 @@ export const push = async (
 				t.settings.driveIdToPath[id] = path;
 				pathsToIds[path] = id;
 			}),
-		);
-
-		await t.drive.updateFile(
-			pathsToIds[
-				vault.configDir + '/plugins/google-drive-sync/data.json'
-			] as string,
-			new Blob([JSON.stringify(t.settings, null, 2)]),
-			{ modifiedTime: new Date().toISOString() },
 		);
 
 		t.settings.operations = {};

@@ -11,6 +11,7 @@ import { refreshAccessToken } from './requests';
 import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
 import { partitionFolderDeletions } from './folder-deletion';
+import { isOwnPluginPath } from './own-plugin';
 
 export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 	let syncNotice = undefined;
@@ -40,7 +41,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 
 		await t.ensureMigrated?.();
 
-		const recentlyModified = await t.diagnostics.withContext(
+		const listedRecentlyModified = await t.diagnostics.withContext(
 			'list-files',
 			'search-recently-modified',
 			async () => {
@@ -57,7 +58,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 				});
 			},
 		);
-		if (!recentlyModified) {
+		if (!listedRecentlyModified) {
 			new Notice(
 				'Pull failed: could not list drive files. Check diagnostics.',
 				8000,
@@ -65,6 +66,11 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			if (!silenceNotices) t.abortSync(syncNotice);
 			return false;
 		}
+
+		// This plugin's own folder (code + private state) is never pulled.
+		const recentlyModified = listedRecentlyModified.filter(
+			({ properties }) => !isOwnPluginPath(t, unSplitPath(properties)),
+		);
 
 		const cloudSet = new Set(
 			Object.values(t.settings.driveIdToPath).filter(
@@ -350,6 +356,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 					.map(async ({ fileId }) => {
 						const path = removedPaths[fileId];
 						if (!path || vault.getAbstractFileByPath(path)) return;
+						if (isOwnPluginPath(t, path)) return;
 						const stat = await adapter.stat(path);
 						if (!stat) return;
 						return { path, type: stat.type };

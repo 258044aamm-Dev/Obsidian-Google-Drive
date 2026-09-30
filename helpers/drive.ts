@@ -1,5 +1,6 @@
 import type ObsidianGoogleDrive from '../main';
 import { getDriveAgent } from './requests';
+import { isOwnPluginPath } from './own-plugin';
 import { requestUrl, TAbstractFile, TFolder } from 'obsidian';
 
 export interface FileMetadata {
@@ -447,17 +448,18 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 				result.matchAll(/HTTP\/1\.1 (\d{3})/g),
 				(match) => Number(match[1]),
 			);
+			// 404 means the file is already gone, which is exactly what a delete wants.
+			const failed = (status: number) =>
+				(status < 200 || status >= 300) && status !== 404;
 			if (
 				statuses.length !== batch.length ||
-				statuses.some((status) => status < 200 || status >= 300)
+				statuses.some(failed)
 			) {
-				const failedCount = statuses.filter(
-					(s) => s < 200 || s >= 300,
-				).length;
+				const failedCount = statuses.filter(failed).length;
 				t.diagnostics.record({
 					phase: 'batch-delete',
 					operation: 'batch-delete-files',
-					httpStatus: statuses.find((s) => s < 200 || s >= 300),
+					httpStatus: statuses.find(failed),
 					message: `${failedCount} of ${batch.length} batch deletes failed (statuses: ${statuses.join(', ')})`,
 				});
 				return;
@@ -561,7 +563,9 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 					}
 				})
 				.concat(
-					plugins.folders.map(async (plugin) => {
+					plugins.folders
+						.filter((plugin) => !isOwnPluginPath(t, plugin))
+						.map(async (plugin) => {
 						const files = await adapter.list(plugin);
 						await Promise.all(
 							files.files

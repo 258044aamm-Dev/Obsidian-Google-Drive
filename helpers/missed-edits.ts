@@ -14,6 +14,7 @@ import { TFile } from 'obsidian';
 import { sameBytes } from './conflict-copy';
 import { isOwnPluginPath } from './own-plugin';
 import { sanitizeMessage } from './diagnostics';
+import { recordSynced } from './sync-state';
 
 /** Candidates beyond this number are not compared one by one (a bulk edit): they are all added. */
 export const MAX_COMPARED_EDITS = 50;
@@ -21,26 +22,34 @@ export const MAX_COMPARED_EDITS = 50;
 export interface LocalFile {
 	path: string;
 	mtime: number;
+	size?: number;
 }
 
+/** Remembered state of a file when it last matched Drive (see helpers/sync-state.ts). */
+export type Baselines = Record<string, { m: number; s: number }>;
+
 /**
- * Files written after the last sync that Drive knows (saved id) and that are not pending.
- * Purely a filter; the content comparison happens afterwards.
+ * Notes that Drive knows (saved id), that are not pending and that may differ from Drive.
+ * A note with a remembered state (`baselines`) counts only when its time or size no longer
+ * matches it, whatever the last sync time says. A note without one falls back to the older
+ * rule: written after the last sync. Purely a filter; the comparison happens afterwards.
  */
 export const editedSinceLastSync = (
 	files: LocalFile[],
 	pathToId: Record<string, string>,
 	operations: Record<string, string>,
 	lastSyncedAt: number,
+	baselines: Baselines = {},
 ) =>
 	files
-		.filter(
-			({ path, mtime }) =>
-				lastSyncedAt > 0 &&
-				mtime > lastSyncedAt &&
-				!!pathToId[path] &&
-				!operations[path],
-		)
+		.filter(({ path, mtime, size }) => {
+			if (!pathToId[path] || operations[path]) return false;
+			const base = baselines[path];
+			if (base && size !== undefined) {
+				return base.m !== mtime || base.s !== size;
+			}
+			return lastSyncedAt > 0 && mtime > lastSyncedAt;
+		})
 		.map(({ path }) => path)
 		.sort();
 
@@ -54,7 +63,12 @@ const localFiles = (t: ObsidianGoogleDrive): (LocalFile & { file: TFile })[] => 
 				!file.path.startsWith(vault.configDir + '/') &&
 				!isOwnPluginPath(t, file.path),
 		)
-		.map((file) => ({ path: file.path, mtime: file.stat.mtime, file }));
+		.map((file) => ({
+			path: file.path,
+			mtime: file.stat.mtime,
+			size: file.stat.size,
+			file,
+		}));
 };
 
 const pathIds = (t: ObsidianGoogleDrive) =>
@@ -69,6 +83,7 @@ export const unrecordedEditCandidates = (t: ObsidianGoogleDrive) =>
 		pathIds(t),
 		t.settings.operations,
 		t.settings.lastSyncedAt,
+		t.settings.syncedFiles,
 	);
 
 /**
@@ -88,8 +103,10 @@ export const recordMissedEdits = async (
 			ids,
 			t.settings.operations,
 			t.settings.lastSyncedAt,
+			t.settings.syncedFiles,
 		);
 		const added: string[] = [];
+		let settingsChanged = false;
 		for (const [index, path] of candidates.entries()) {
 			const file = byPath.get(path);
 			const id = ids[path];
@@ -104,6 +121,14 @@ export const recordMissedEdits = async (
 							await t.app.vault.readBinary(file),
 							remote,
 						);
+						// Identical to Drive: remember that, so it is not looked at again.
+						if (!differs) {
+							recordSynced(t, path, {
+								m: file.stat.mtime,
+								s: file.stat.size,
+							});
+							settingsChanged = true;
+						}
 					}
 				} catch {
 					differs = true;
@@ -120,8 +145,8 @@ export const recordMissedEdits = async (
 				operation: 'missed-edits',
 				message: `${added.length} edited note(s) were not in the pending list and were added`,
 			});
-			await t.saveSettings();
 		}
+		if (added.length || settingsChanged) await t.saveSettings();
 		return added;
 	} catch (error) {
 		t.diagnostics.record({

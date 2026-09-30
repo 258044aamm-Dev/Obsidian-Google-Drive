@@ -15,6 +15,7 @@ import {
 } from 'obsidian';
 import { fixDrivePath } from './helpers/fix_drive_path';
 import { runSyncDoctor } from './helpers/doctor-command';
+import { runCompareActiveNote } from './helpers/compare-note-command';
 import { installStatusBar, type StatusBar } from './helpers/status-bar';
 import { createKeyStore, loadEncryption, type E2ee, type KeyStore } from './helpers/e2ee';
 import { renderRow } from './helpers/settings-row';
@@ -22,6 +23,7 @@ import { openChangePassphrase, openDisableEncryption, openEnableEncryption, open
 import { createRestorePointNow, startVaultRestore } from './helpers/history-ui';
 import { HISTORY_MAX_DAYS, HISTORY_MIN_DAYS } from './helpers/history';
 import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
+import { pruneSyncState, recordSyncedFromDisk } from './helpers/sync-state';
 import type { DiagnosticEntry, SyncPhase } from './helpers/diagnostics';
 
 const isInConfigDir = (configDir: string, path: string) =>
@@ -54,6 +56,10 @@ interface PluginSettings {
 	/** Id of this device's key for the encrypted vault (the key itself is in the device's IndexedDB). */
 	e2eeKid: string;
 	/** The plain Drive link this device had before encryption was turned on, so turning it off can go back. */
+	/** Drive id -> the modifiedTime Drive reported after THIS device uploaded the file (see helpers/sync-state.ts). */
+	ownUploads?: Record<string, string>;
+	/** Vault path -> { m: mtime, s: size } when the file was last known to match its Drive copy. */
+	syncedFiles?: Record<string, { m: number; s: number }>;
 	e2eePlainLink?: {
 		rootFolderId: string;
 		driveIdToPath: Record<string, string>;
@@ -176,6 +182,12 @@ export default class ObsidianGoogleDrive extends Plugin {
 			id: 'sync-doctor',
 			name: 'Sync doctor (read-only check of this device vs Google Drive)',
 			callback: () => runSyncDoctor(this),
+		});
+
+		this.addCommand({
+			id: 'compare-note-with-drive',
+			name: 'Compare the open note with Google Drive (read-only)',
+			callback: () => runCompareActiveNote(this),
 		});
 
 		this.addCommand({
@@ -408,6 +420,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.app.vault.createBinary(path, content, {
 			mtime: modificationDate,
 		});
+		await recordSyncedFromDisk(this, path);
 		if (oldOperation) this.settings.operations[path] = oldOperation;
 		else delete this.settings.operations[path];
 	}
@@ -428,6 +441,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.app.vault.modifyBinary(file, content, {
 			mtime: modificationDate,
 		});
+		await recordSyncedFromDisk(this, file.path);
 		if (oldOperation) this.settings.operations[file.path] = oldOperation;
 		else delete this.settings.operations[file.path];
 	}
@@ -448,6 +462,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.app.vault.adapter.writeBinary(file, content, {
 			mtime: modificationDate,
 		});
+		await recordSyncedFromDisk(this, file);
 		if (isInConfigDir(this.app.vault.configDir, file)) {
 			(this.pulledConfigPaths ||= new Set()).add(file);
 		}
@@ -520,6 +535,11 @@ export default class ObsidianGoogleDrive extends Plugin {
 			}
 			this.settings.lastSyncedAt = syncedAt;
 			this.settings.changesToken = changesToken;
+			pruneSyncState(
+				this,
+				new Set(Object.values(this.settings.driveIdToPath)),
+				syncedAt,
+			);
 		}
 		// else: Drive has changes this device has not pulled; keep the old position so the next Pull gets them.
 		this.pulledConfigPaths = undefined;

@@ -285,12 +285,12 @@ export class FakeDrive {
 		}
 		if (method === 'POST' && path === '/drive/v3/files') {
 			const meta = JSON.parse(req.body);
-			return ok({ id: this.add({ ...meta }) });
+			{ const id = this.add({ ...meta }); return ok({ id, modifiedTime: this.files.get(id)!.modifiedTime }); }
 		}
 		if (method === 'POST' && path === '/upload/drive/v3/files') {
 			const form = this.parseForm(req.body, req.contentType);
 			const meta = JSON.parse(Buffer.from(form.metadata!).toString());
-			return ok({ id: this.add({ ...meta, content: form.file }) });
+			{ const id = this.add({ ...meta, content: form.file }); return ok({ id, modifiedTime: this.files.get(id)!.modifiedTime }); }
 		}
 		m = /^\/upload\/drive\/v3\/files\/([^/]+)$/.exec(path);
 		if (m && method === 'PATCH') {
@@ -301,7 +301,7 @@ export class FakeDrive {
 			f.content = form.file!;
 			f.revisions.push(this.newRevision(form.file!));
 			this.changes.push({ seq: this.changes.length + 1, fileId: f.id, removed: false });
-			return ok({ id: f.id });
+			return ok({ id: f.id, modifiedTime: f.modifiedTime });
 		}
 		if (method === 'POST' && path === '/batch/drive/v3') {
 			const parts = String(req.body).split(/--batch_[0-9a-f-]+/).filter((x) => /(DELETE|PATCH) \/drive\/v3\/files\//.test(x));

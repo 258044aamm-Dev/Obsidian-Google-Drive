@@ -18,6 +18,7 @@ import {
 import { isOwnPluginPath } from './own-plugin';
 import { addTrashedAsRemoved } from './trash';
 import { sameBytes, saveConflictCopy } from './conflict-copy';
+import { isOwnUpload } from './sync-state';
 import {
 	countRemoteChanges,
 	findCollisions,
@@ -193,13 +194,15 @@ export const pull = async (
 			});
 
 		if (guard) {
-			const changed: RemoteChange[] = recentlyModified.map(
-				({ id, properties, mimeType }) => ({
+			// A file whose Drive time is exactly what this device's own upload produced is
+			// not a change made by anybody else.
+			const changed: RemoteChange[] = recentlyModified
+				.filter(({ id, modifiedTime }) => !isOwnUpload(t, id, modifiedTime))
+				.map(({ id, properties, mimeType }) => ({
 					path: unSplitPath(properties),
 					previousPath: t.settings.driveIdToPath[id],
 					isFolder: mimeType === folderMimeType,
-				}),
-			);
+				}));
 			const gone = Object.values(removedPaths).filter(
 				(path): path is string => !!path,
 			);

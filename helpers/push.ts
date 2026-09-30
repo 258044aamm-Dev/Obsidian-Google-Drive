@@ -16,6 +16,9 @@ import { sanitizeMessage } from './diagnostics';
 import { massDeleteWarning } from './push-warning';
 import { recordRestorePointAfterPush } from './history';
 import { recordMissedEdits } from './missed-edits';
+import { recordSynced, stampOf } from './sync-state';
+import { verifySummary, verifyUploads } from './push-verify';
+import type { UploadedItem } from './push-verify';
 
 export class ConfirmPushModal extends Modal {
 	proceed: (res: boolean, withoutPull?: boolean) => void;
@@ -321,6 +324,8 @@ export const push = async (
 	const syncNotice = await t.startSync('Pushing to Google Drive');
 
 	let lastPhase: SyncPhase = 'upload';
+	/** Files this Push uploaded; a sample is checked on Drive at the end. */
+	const uploaded: UploadedItem[] = [];
 
 	// Whether Drive holds changes that this device has NOT pulled (only possible when the
 	// user chose "Push without pulling"). The sync position then must not move forward.
@@ -490,8 +495,11 @@ export const push = async (
 
 				await batchAsync(
 					notes.map((note) => async () => {
+						// Stamp taken before the read: an edit made during the upload still differs from it.
+						const stamp = stampOf(note);
+						const data = await vault.readBinary(note);
 						const id = await t.drive.uploadFile(
-							new Blob([await vault.readBinary(note)]),
+							new Blob([data]),
 							note.name,
 							note.parent ? pathsToIds[note.parent.path] : undefined,
 							{
@@ -513,6 +521,8 @@ export const push = async (
 					);
 
 					t.settings.driveIdToPath[id] = note.path;
+					recordSynced(t, note.path, stamp);
+					uploaded.push({ id, path: note.path, size: data.byteLength });
 				}),
 			);
 		});
@@ -536,9 +546,11 @@ export const push = async (
 
 				await batchAsync(
 					files.map((file) => async () => {
+						const stamp = stampOf(file);
+						const data = await vault.readBinary(file);
 						const id = await t.drive.updateFile(
 							pathToId[file.path] as string,
-							new Blob([await vault.readBinary(file)]),
+							new Blob([data]),
 							{ modifiedTime: new Date().toISOString() },
 							file.path,
 						);
@@ -554,6 +566,8 @@ export const push = async (
 					syncNotice.setMessage(
 						`Pushing... updating ${completed}/${files.length} files`,
 					);
+					recordSynced(t, file.path, stamp);
+					uploaded.push({ id, path: file.path, size: data.byteLength });
 					}),
 				);
 			});
@@ -654,6 +668,15 @@ export const push = async (
 			await recordRestorePointAfterPush(t);
 		}
 
+		let verified = '';
+		if (uploaded.length) {
+			syncNotice.setMessage('Pushing... checking the uploaded files on Drive');
+			verified = verifySummary(
+				await verifyUploads(t, uploaded),
+				t.settings.e2eeEnabled === true,
+			);
+		}
+
 		const ended = unpulledRemoteChanges
 			? await t.endSync(syncNotice, false, false)
 			: await t.endSync(syncNotice, false);
@@ -672,7 +695,9 @@ export const push = async (
 			`Push complete — ${totalFiles} file${totalFiles === 1 ? '' : 's'} synced.` +
 				(unpulledRemoteChanges
 					? ' Google Drive has newer changes that were not pulled: press Pull next.'
-					: ''),
+					: '') +
+				verified,
+			verified ? 12000 : undefined,
 		);
 	} catch (error) {
 		t.diagnostics.record({

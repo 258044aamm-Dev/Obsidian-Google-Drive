@@ -4,6 +4,23 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.6.2 - 2026-09-30
+
+### Fixed
+- **A false "changed both on this device and on Google Drive" stop.** "Push without pulling" does not move this device's sync position (on purpose), so the next Push saw this device's *own earlier upload* as a change made on Google Drive and stopped. The device now remembers the exact time Drive gave each of its own uploads and no longer counts those. A change made by another device still stops the Push, as before, and the message now says so.
+- **The same edited notes were added and uploaded again by every Push** (for example after copying a vault to a phone: 219 notes each time). Each note's modified time and size are now remembered when it is uploaded, downloaded or found identical to Drive. A note counts as edited only when it differs from that. Notes with nothing remembered behave as in 3.6.1, and get a remembered state after their first Push or Pull.
+- An edit whose event was lost is now also found when it is older than the last Pull (before, only notes newer than the last sync were looked at).
+
+### Added
+- **The Push result checks Drive.** After uploading, up to 20 of the uploaded files are looked up on Google Drive (size and Trash) and the message says so ("Checked 3 uploaded file(s) on Google Drive: all present."), or warns which ones do not look right. With encryption on it reminds you that the Drive website shows only random names.
+- **Command: "Compare the open note with Google Drive (read-only)."** Shows the note's size and time on both sides, whether it waits to be pushed, whether Drive's copy is this device's own upload, and whether the content is the same after decrypting. Read-only.
+
+### Changed
+- Settings gain two optional fields (`ownUploads`, `syncedFiles`); nothing is needed from older settings and the Drive format is unchanged. Turning encryption on or off clears them.
+
+### Tests
+- Simulator tests for two Push-without-pulling in a row, a real conflict in between, a 60-note copied vault, a lost edit older than the last sync, and the Push result; unit tests for the remembered state, the Drive check and the compare report. Each was checked to fail without its fix.
+
 ## 3.6.1 - 2026-09-30
 
 ### Fixed

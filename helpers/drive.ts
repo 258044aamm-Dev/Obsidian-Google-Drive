@@ -2,6 +2,7 @@ import type ObsidianGoogleDrive from '../main';
 import { getDriveAgent } from './requests';
 import { E2eeError, requireUnlocked } from './e2ee';
 import { isOwnPluginPath } from './own-plugin';
+import { recordOwnUpload } from './sync-state';
 import { Notice, requestUrl, TAbstractFile, TFolder } from 'obsidian';
 
 export interface FileMetadata {
@@ -345,7 +346,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}
 
 		const folder = await drive
-			.post(`drive/v3/files`, {
+			.post(`drive/v3/files?fields=id,modifiedTime`, {
 				json: {
 					name,
 					mimeType: folderMimeType,
@@ -355,8 +356,9 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 					modifiedTime,
 				},
 			})
-			.json<{ id: string }>();
+			.json<{ id: string; modifiedTime?: string }>();
 		if (!folder) return;
+		recordOwnUpload(t, folder.id, folder.modifiedTime);
 		return folder.id;
 	};
 
@@ -412,11 +414,12 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		form.append('file', file);
 
 		const result = await drive
-			.post(`upload/drive/v3/files?uploadType=multipart&fields=id`, {
+			.post(`upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime`, {
 				body: form,
 			})
-			.json<{ id: string }>();
+			.json<{ id: string; modifiedTime?: string }>();
 		if (!result) return;
+		recordOwnUpload(t, result.id, result.modifiedTime);
 
 		return result.id;
 	};
@@ -449,13 +452,14 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 		const result = await drive
 			.patch(
-				`upload/drive/v3/files/${id}?uploadType=multipart&fields=id`,
+				`upload/drive/v3/files/${id}?uploadType=multipart&fields=id,modifiedTime`,
 				{
 					body: form,
 				},
 			)
-			.json<{ id: string }>();
+			.json<{ id: string; modifiedTime?: string }>();
 		if (!result) return;
+		recordOwnUpload(t, result.id, result.modifiedTime);
 
 		return result.id;
 	};
@@ -508,6 +512,17 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}
 		return metadata;
 	};
+
+	/** What Drive says about one file right now: size, modified time, trashed. Read-only. */
+	const getFileStatus = async (id: string) =>
+		drive
+			.get(`drive/v3/files/${id}?fields=id,size,modifiedTime,trashed`)
+			.json<{
+				id: string;
+				size?: string;
+				modifiedTime?: string;
+				trashed?: boolean;
+			}>();
 
 	const idFromPath = async (path: string) => {
 		const files = await searchFiles({
@@ -758,6 +773,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		deleteFile,
 		getFile,
 		getFileMetadata,
+		getFileStatus,
 		idFromPath,
 		idsFromPaths,
 		getChangesStartToken,

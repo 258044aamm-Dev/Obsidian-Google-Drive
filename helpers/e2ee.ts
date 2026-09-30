@@ -28,6 +28,7 @@ import {
 } from './crypto';
 import { getDriveAgent, refreshAccessToken } from './requests';
 import { isOwnPluginPath } from './own-plugin';
+import { clearSyncState } from './sync-state';
 
 export { E2eeError } from './crypto';
 
@@ -243,6 +244,7 @@ export const enableEncryption = async (
 	t.settings.changesToken = changesToken;
 	t.settings.lastSyncedAt = 0;
 	t.settings.operations = mode === 'created' ? localItemsToCreate(t) : {};
+	clearSyncState(t);
 	t.settings.e2eeEnabled = true;
 	t.settings.e2eeKid = header.kid;
 	t.e2ee = new E2ee(keys, tag, header.kid);
@@ -291,6 +293,7 @@ export const disableEncryption = async (t: ObsidianGoogleDrive) => {
 		t.settings.lastSyncedAt = 0;
 		t.settings.changesToken = '';
 	}
+	clearSyncState(t);
 	await t.saveSettings();
 	if (kid) await t.keyStore.delete(kid).catch(() => undefined);
 	t.updateStatusBar();

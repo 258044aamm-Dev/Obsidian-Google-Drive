@@ -81,7 +81,7 @@ export const blockedMessage = (
 	if (withoutPull && conflicts.length) {
 		const sample = conflicts.slice(0, 3).join(', ');
 		const more = conflicts.length > 3 ? ` and ${conflicts.length - 3} more` : '';
-		return `Push stopped: ${conflicts.length} item(s) changed both on this device and on Google Drive (${sample}${more}). Press Pull first so nothing is overwritten. Nothing was changed.`;
+		return `Push stopped: ${conflicts.length} item(s) changed both on this device and on Google Drive (${sample}${more}). Google Drive's copy was changed by another device (or by you there), not by an upload from this device. Press Pull first so nothing is overwritten: identical copies are ignored, different ones are kept as a conflict copy. Then Push. Nothing was changed.`;
 	}
 	const n = guard.remoteCount ?? 0;
 	return `Push stopped: Google Drive has ${n} newer change${n === 1 ? '' : 's'} that this device has not pulled. Press Pull first, then Push. (Or choose "Push without pulling" in the Push window.) Nothing was changed.`;

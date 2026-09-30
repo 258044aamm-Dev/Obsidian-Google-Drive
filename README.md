@@ -27,6 +27,16 @@ Fixes in 3.2.0 compared with 3.1.x:
 
 Upgrading from 3.1.x: it is safe to install over the existing plugin folder on one device at a time. The Drive metadata format has not changed, so devices on 3.1.1 and 3.2.0 can share one Drive vault. Back up your vault first.
 
+## What is new in 3.4.1: Push no longer pulls
+
+Until now (as in the original plugin) every Push began with a hidden Pull, which could download, overwrite or delete files on this device without you pressing Pull. That is gone:
+
+- **Push only looks.** Before uploading, Push asks Google Drive whether anything changed since this device last synced. If so, it **stops and changes nothing**, on this device or on Drive, and tells you: *Press Pull first, then Push.*
+- **Pull is the only thing that changes files on this device** (besides restoring from version history, which says so).
+- The Push window has a third button, **Push without pulling**. It uploads your changes even though Drive has newer changes that you have not pulled, **unless an item changed on both sides** (same note, a note inside a folder that was deleted or moved on Drive, a folder you deleted that got a new file on Drive, and similar). Those are refused and listed; Pull first so both versions are kept.
+- After a Push without pulling the sync position is **not** moved forward, so the next Pull still brings in everything you skipped. That Pull may re-download files you just uploaded (same content); nothing is lost. If you edit such a note between the two, you may get a `(Drive YYYY-MM-DD)` copy of your own upload; delete it.
+- The original plugin still pulls before it pushes. Devices on the original plugin are not affected, and the Drive format has not changed.
+
 ## What is new in 3.4.0: version history for the whole vault
 
 After **every successful Push** the plugin saves a small **restore point** on Google Drive: a list of every file in the vault with its Google Drive id and version. Google Drive itself keeps the older versions of files (and deleted files in its Trash) for about 30 days, so a restore point is enough to take the whole vault back to that moment. Your notes are not stored a second time.
@@ -164,7 +174,7 @@ Note: Instructions are also on this plugin's homepage with images at [https://og
     - Pulling new plugins/configurations may require a restart of Obsidian
 - To sync local changes to Google Drive, click the sync (Push) button on the ribbon or run the `Push to Google Drive` command from the command palette
     - While you do not have to sync before you close Obsidian, we suggest doing so to ensure that Google Drive is up to date and no conflicts occur
-    - This will pull changes before pushing changes to Google Drive
+    - Push never pulls. It only checks Google Drive first: if Drive has changes this device has not pulled, Push stops and tells you to Pull first (see 3.4.1)
 - You can enable `Automatically push changes` in the plugin settings to push one minute after the most recent local file change. This setting is disabled by default
 - Not sure what a Pull or Push would do? Run `Sync doctor (read-only check of this device vs Google Drive)`; it lists files deleted on Drive, files only on Drive, new local files, duplicate paths and pending operations
 - `Fix Google Drive paths` is an advanced repair: it rebuilds the saved id map from Drive and clears pending operations. Run `Sync doctor` first; files that were deleted on Drive but still exist locally are then no longer recognised as deleted, so delete them by hand instead of pushing

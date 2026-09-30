@@ -13,6 +13,7 @@ import { isOwnPluginPath } from './own-plugin';
 import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
 import { massDeleteWarning } from './push-warning';
+import { recordRestorePointAfterPush } from './history';
 
 export class ConfirmPushModal extends Modal {
 	proceed: (res: boolean) => void;
@@ -600,6 +601,12 @@ export const push = async (
 		);
 
 		t.settings.operations = {};
+
+		// Version history: one restore point per Push. Never fails the Push (see history.ts).
+		if (t.settings.historyEnabled === true) {
+			syncNotice.setMessage('Pushing... saving restore point');
+			await recordRestorePointAfterPush(t);
+		}
 
 		if (!(await t.endSync(syncNotice, false))) return;
 

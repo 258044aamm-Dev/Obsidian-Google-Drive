@@ -15,6 +15,7 @@ export type SyncPhase =
 	| 'settings'
 	| 'auto-sync'
 	| 'fix-paths'
+	| 'history'
 	| 'reset';
 
 export interface DiagnosticEntry {

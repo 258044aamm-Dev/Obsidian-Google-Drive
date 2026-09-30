@@ -15,6 +15,8 @@ import {
 } from 'obsidian';
 import { fixDrivePath } from './helpers/fix_drive_path';
 import { runSyncDoctor } from './helpers/doctor-command';
+import { createRestorePointNow, startVaultRestore } from './helpers/history-ui';
+import { HISTORY_MAX_DAYS, HISTORY_MIN_DAYS } from './helpers/history';
 import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
 import type { DiagnosticEntry, SyncPhase } from './helpers/diagnostics';
 
@@ -28,6 +30,10 @@ interface PluginSettings {
 	startupPull: boolean;
 	/** Files deleted on this device go to the Drive Trash (recoverable) instead of being deleted permanently. */
 	deleteToTrash: boolean;
+	/** Save a restore point of the whole vault after every Push (see helpers/history.ts). */
+	historyEnabled: boolean;
+	/** How many days restore points are kept (1 to 30). */
+	historyRetentionDays: number;
 	operations: Record<string, 'create' | 'delete' | 'modify'>;
 	driveIdToPath: Record<string, string>;
 	rootFolderId: string;
@@ -46,6 +52,8 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	autoPush: false,
 	startupPull: false,
 	deleteToTrash: true,
+	historyEnabled: true,
+	historyRetentionDays: 10,
 	operations: {},
 	driveIdToPath: {},
 	rootFolderId: '',
@@ -133,6 +141,18 @@ export default class ObsidianGoogleDrive extends Plugin {
 			id: 'sync-doctor',
 			name: 'Sync doctor (read-only check of this device vs Google Drive)',
 			callback: () => runSyncDoctor(this),
+		});
+
+		this.addCommand({
+			id: 'restore-vault-history',
+			name: 'Restore the whole vault to an earlier restore point (version history)',
+			callback: () => startVaultRestore(this),
+		});
+
+		this.addCommand({
+			id: 'create-restore-point',
+			name: 'Create a restore point now (version history)',
+			callback: () => createRestorePointNow(this),
 		});
 
 		this.addCommand({
@@ -750,6 +770,53 @@ class SettingsTab extends PluginSettingTab {
 					type: 'toggle',
 					key: 'deleteToTrash',
 					defaultValue: true,
+				},
+			},
+			{
+				name: 'Save a restore point after every Push',
+				desc: 'On by default: after each successful Push a small list of your files and their Google Drive versions is saved next to the vault on Drive. It lets you restore the whole vault to that moment (command: "Restore the whole vault to an earlier restore point"). Google Drive itself keeps the old versions of files for about 30 days.',
+				control: {
+					type: 'toggle',
+					key: 'historyEnabled',
+					defaultValue: true,
+				},
+			},
+			{
+				name: 'Keep restore points for (days)',
+				desc: 'Older restore points are deleted after each Push. The newest one is always kept. Google Drive forgets old file versions after about 30 days, so 30 is the most that makes sense.',
+				control: {
+					type: 'slider',
+					key: 'historyRetentionDays',
+					defaultValue: 10,
+					min: HISTORY_MIN_DAYS,
+					max: HISTORY_MAX_DAYS,
+					step: 1,
+					displayFormat: (value: number) => `${value} days`,
+				},
+			},
+			{
+				name: 'Version history',
+				render: (setting) => {
+					setting.settingEl.empty();
+					setting.setName('Version history');
+					setting.setDesc(
+						'Restore the whole vault to an earlier restore point, or save a restore point right now. A restore first changes only this device; you review it and then push.',
+					);
+					const btns = setting.settingEl.createDiv({
+						cls: 'setting-item-control',
+					});
+					const restoreBtn = btns.createEl('button', {
+						text: 'Restore...',
+					});
+					restoreBtn.addEventListener('click', () => {
+						void startVaultRestore(this.plugin);
+					});
+					const pointBtn = btns.createEl('button', {
+						text: 'Create restore point now',
+					});
+					pointBtn.addEventListener('click', () => {
+						void createRestorePointNow(this.plugin);
+					});
 				},
 			},
 			{

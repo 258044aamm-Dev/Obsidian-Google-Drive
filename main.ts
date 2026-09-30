@@ -12,6 +12,7 @@ import {
 	type SettingDefinitionItem,
 	TAbstractFile,
 	TFile,
+	TFolder,
 } from 'obsidian';
 import { fixDrivePath } from './helpers/fix_drive_path';
 import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
@@ -23,6 +24,8 @@ interface PluginSettings {
 	clientSecret: string;
 	accessTokenUrl: string;
 	autoPush: boolean;
+	/** Pull from Drive automatically when Obsidian starts. Off by default: sync is manual. */
+	startupPull: boolean;
 	operations: Record<string, 'create' | 'delete' | 'modify'>;
 	driveIdToPath: Record<string, string>;
 	rootFolderId: string;
@@ -39,6 +42,7 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	clientSecret: '',
 	accessTokenUrl: '',
 	autoPush: false,
+	startupPull: false,
 	operations: {},
 	driveIdToPath: {},
 	rootFolderId: '',
@@ -58,6 +62,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 	};
 	drive = getDriveClient(this);
 	ribbonIcon!: HTMLElement;
+	pullRibbonIcon?: HTMLElement;
+	private migrationChecked = false;
 	syncing!: boolean;
 	autoPushTimer?: number;
 
@@ -84,6 +90,15 @@ export default class ObsidianGoogleDrive extends Plugin {
 			() => {
 				if (this.syncing) return;
 				void push(this);
+			},
+		);
+
+		this.pullRibbonIcon = this.addRibbonIcon(
+			'cloud-download',
+			'Pull from Google Drive',
+			() => {
+				if (this.syncing) return;
+				void pull(this);
 			},
 		);
 
@@ -137,6 +152,9 @@ export default class ObsidianGoogleDrive extends Plugin {
 				vault.on('rename', this.handleRename.bind(this)),
 			);
 
+			// Sync is manual: nothing is pulled at startup unless the user opted in.
+			if (!this.settings.startupPull) return;
+
 			void checkConnection().then(async (connected) => {
 				if (!connected) {
 					this.diagnostics.record({
@@ -147,10 +165,10 @@ export default class ObsidianGoogleDrive extends Plugin {
 					return;
 				}
 
-				await this.checkAndMigrate();
+				await this.ensureMigrated();
 
 				this.syncing = true;
-				this.ribbonIcon.addClass('spin');
+				this.setSpinning(true);
 				let autoSyncPhase: SyncPhase = 'auto-sync';
 				try {
 					autoSyncPhase = 'download';
@@ -193,9 +211,12 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	async loadSettings() {
+		// `operations` and `driveIdToPath` get fresh objects so that no two loads (or
+		// devices in tests) ever share the mutable defaults.
 		this.settings = Object.assign(
 			{},
 			DEFAULT_SETTINGS,
+			{ operations: {}, driveIdToPath: {} },
 			(await this.loadData()) as PluginSettings,
 		);
 	}
@@ -205,6 +226,13 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	debouncedSaveSettings = debounce(this.saveSettings.bind(this), 500, true);
+
+	setSpinning(spinning: boolean) {
+		[this.ribbonIcon, this.pullRibbonIcon].forEach((icon) => {
+			if (spinning) icon?.addClass('spin');
+			else icon?.removeClass('spin');
+		});
+	}
 
 	clearAutoPushTimer() {
 		if (this.autoPushTimer === undefined) return;
@@ -354,6 +382,20 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.app.fileManager.trashFile(file);
 		delete this.settings.operations[file.path];
 		if (!oldOperation) delete this.settings.operations[file.path];
+		if (file instanceof TFolder) {
+			// Trashing a folder makes Obsidian emit a delete event for every descendant, which
+			// would leave a pending "delete" for each of them after a pull that is only
+			// mirroring a deletion that already happened on Drive.
+			const prefix = file.path + '/';
+			Object.keys(this.settings.operations).forEach((path) => {
+				if (
+					path.startsWith(prefix) &&
+					this.settings.operations[path] === 'delete'
+				) {
+					delete this.settings.operations[path];
+				}
+			});
+		}
 	}
 
 	async startSync(operationName = 'Syncing') {
@@ -364,7 +406,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 			throw new Error('No internet connection');
 		}
 		this.clearAutoPushTimer();
-		this.ribbonIcon.addClass('spin');
+		this.setSpinning(true);
 		this.syncing = true;
 		return new Notice(`${operationName}...`, 0);
 	}
@@ -396,7 +438,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		this.settings.lastSyncedAt = syncedAt;
 		this.settings.changesToken = changesToken;
 		await this.saveSettings();
-		this.ribbonIcon.removeClass('spin');
+		this.setSpinning(false);
 		this.syncing = false;
 		syncNotice?.hide();
 		this.resumeAutoPushIfNeeded();
@@ -405,7 +447,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 	abortSync(syncNotice?: Notice) {
 		void this.saveLog(this.diagnostics.getEntries());
-		this.ribbonIcon.removeClass('spin');
+		this.setSpinning(false);
 		this.syncing = false;
 		syncNotice?.hide();
 		this.resumeAutoPushIfNeeded();
@@ -528,11 +570,35 @@ export default class ObsidianGoogleDrive extends Plugin {
 					unSplitPath(properties),
 				]),
 			);
-			this.settings.driveIdToPath = idToPath;
+			// Merge, never replace: ids that only the local map knows about carry the
+			// information needed to mirror Drive-side deletions on this device.
+			this.settings.driveIdToPath = {
+				...this.settings.driveIdToPath,
+				...idToPath,
+			};
 			await this.saveSettings();
 			return true;
 		} catch {
 			return false;
+		}
+	}
+
+	/**
+	 * Runs the one-time migration check lazily, right before the first manual sync of a
+	 * session (instead of at startup).
+	 */
+	async ensureMigrated(): Promise<void> {
+		if (this.migrationChecked) return;
+		this.migrationChecked = true;
+		try {
+			await this.checkAndMigrate();
+		} catch (error) {
+			// The migration is best effort and must never block a sync.
+			this.diagnostics.record({
+				phase: 'auto-sync',
+				operation: 'migration-error',
+				message: sanitizeMessage(error),
+			});
 		}
 	}
 

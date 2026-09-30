@@ -198,7 +198,10 @@ describe('checkAndMigrate', () => {
 		await plugin.checkAndMigrate();
 
 		expect(plugin.drive.searchFiles).toHaveBeenCalled();
+		// Merge-only: ids known only to the local map are kept (they let this device
+		// mirror Drive-side deletions instead of resurrecting those files).
 		expect(plugin.settings.driveIdToPath).toEqual({
+			'old-id': 'old-path.md',
 			'new-id': 'new-path.md',
 		});
 		expect(plugin.settings.lastInstalledVersion).toBe('3.0.0');

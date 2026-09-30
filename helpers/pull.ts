@@ -10,6 +10,7 @@ import {
 import { refreshAccessToken } from './requests';
 import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
+import { partitionFolderDeletions } from './folder-deletion';
 
 export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 	let syncNotice = undefined;
@@ -36,6 +37,8 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 				return false;
 			}
 		}
+
+		await t.ensureMigrated?.();
 
 		const recentlyModified = await t.diagnostics.withContext(
 			'list-files',
@@ -139,12 +142,17 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 				]),
 		);
 
+		// Ids that Drive says are gone. They are only dropped from the id map once the
+		// local deletions have really been applied (see below): if this pull dies half
+		// way, the next pull must still know which local paths those ids belonged to.
+		const removedIds = new Set<string>();
+
 		const deletions = changes
 			.filter(({ removed }) => removed)
 			.map(({ fileId }) => {
 				const path = t.settings.driveIdToPath[fileId];
 				if (!path) return;
-				delete t.settings.driveIdToPath[fileId];
+				removedIds.add(fileId);
 
 				const file = vault.getAbstractFileByPath(path);
 
@@ -163,20 +171,29 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		}
 
 		const pathToId = Object.fromEntries(
-			Object.entries(t.settings.driveIdToPath).map(([id, path]) => [
-				path,
-				id,
-			]),
+			Object.entries(t.settings.driveIdToPath)
+				.filter(([id]) => !removedIds.has(id))
+				.map(([id, path]) => [path, id]),
 		);
+
+		// Entries for removed ids stay in the persisted map until the deletions succeed.
+		const pendingRemovals: Record<string, string> = {};
+		removedIds.forEach((id) => {
+			const path = t.settings.driveIdToPath[id];
+			if (path) pendingRemovals[id] = path;
+		});
 
 		const updateMap = () => {
 			recentlyModified.forEach(({ id, properties }) => {
 				pathToId[unSplitPath(properties)] = id;
 			});
 
-			t.settings.driveIdToPath = Object.fromEntries(
-				Object.entries(pathToId).map(([path, id]) => [id, path]),
-			);
+			t.settings.driveIdToPath = {
+				...pendingRemovals,
+				...Object.fromEntries(
+					Object.entries(pathToId).map(([path, id]) => [id, path]),
+				),
+			};
 		};
 
 		updateMap();
@@ -194,22 +211,21 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 					return true;
 				});
 
-			const deletionPaths = deletions.map((file) => file?.path);
+			const deletedFilePaths = new Set(deletedFiles.map(({ path }) => path));
 
-			const deletedFolders = deletions
-				.filter((folder) => folder instanceof TFolder)
-				.filter((folder: TFolder) => {
-					if (pathToId[folder.path]) return;
-					if (
-						folder.children.find(
-							({ path }) => !deletionPaths.includes(path),
-						)
-					) {
-						return true;
-					}
-					t.settings.operations[folder.path] = 'create';
-					return;
-				});
+			const { remove: deletedFolders, keep: keptFolders } =
+				partitionFolderDeletions(
+					deletions
+						.filter((folder) => folder instanceof TFolder)
+						.filter((folder) => !pathToId[folder.path]),
+					deletedFilePaths,
+				);
+
+			// Folders that still hold local content must not be deleted (nor left behind
+			// as silent ghosts): treat them as new local folders.
+			keptFolders.forEach((folder) => {
+				t.settings.operations[folder.path] = 'create';
+			});
 
 			await t.drive.deleteFilesMinimumOperations([
 				...deletedFolders,
@@ -221,6 +237,9 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 			lastPhase = 'delete';
 			await deleteFiles();
 		});
+
+		// The deletions are applied: now it is safe to forget the removed ids.
+		removedIds.forEach((id) => delete t.settings.driveIdToPath[id]);
 
 		syncNotice?.setMessage(
 			`Pulling... ${deletions.filter(Boolean).length} files removed`,

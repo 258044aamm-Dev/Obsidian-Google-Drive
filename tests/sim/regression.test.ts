@@ -9,12 +9,9 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.stubGlobal('window', globalThis);
 vi.mock('obsidian', async () => await import('./obsidian-mock'));
-import { sleep, dec } from './world';
+import { sleep, dec, netLog } from './world';
 import { setup, desktopCleanup, same } from './scenario-helpers';
 import { TFile } from './obsidian-mock';
-
-/** Reproduces bugs fixed in P1 (3.2.0). Flipped to plain `it` in the commit that fixes them. */
-const p1 = it.fails;
 
 describe('sync regression (two devices, fake Drive)', () => {
 	it('S0 clean bootstrap: phone == desktop == Drive, no pending ops', async () => {
@@ -48,7 +45,7 @@ describe('sync regression (two devices, fake Drive)', () => {
 
 	for (const children of [true, false]) {
 		describe(`folder deletes/moves (events for descendants: ${children})`, () => {
-			p1('S1/S2 manual Pull makes the phone match the desktop (no folder shells left)', async () => {
+			it('S1/S2 manual Pull makes the phone match the desktop (no folder shells left)', async () => {
 				const { desktop, mobile } = await setup({ eventsForChildren: children });
 				await desktopCleanup(desktop);
 				await mobile.pull();
@@ -56,7 +53,7 @@ describe('sync regression (two devices, fake Drive)', () => {
 				expect(mobile.ops()).toEqual({});
 			});
 
-			p1('S1c a later phone push does not resurrect anything on Drive or desktop', async () => {
+			it('S1c a later phone push does not resurrect anything on Drive or desktop', async () => {
 				const { w, desktop, mobile } = await setup({ eventsForChildren: children });
 				await desktopCleanup(desktop);
 				await mobile.pull();
@@ -73,7 +70,7 @@ describe('sync regression (two devices, fake Drive)', () => {
 		});
 	}
 
-	p1('S1-first fork first launch (legacy map present, lastInstalledVersion empty) deletes nothing it should keep and keeps nothing it should delete', async () => {
+	it('S1-first fork first launch (legacy map present, lastInstalledVersion empty) deletes nothing it should keep and keeps nothing it should delete', async () => {
 		const { desktop, mobile } = await setup();
 		await desktopCleanup(desktop);
 		mobile.plugin.settings.lastInstalledVersion = '';
@@ -83,7 +80,7 @@ describe('sync regression (two devices, fake Drive)', () => {
 		expect(same(desktop.tree(), mobile.tree())).toBe('IDENTICAL');
 	});
 
-	p1('S3b a pull that dies before local deletes run converges on retry and never resurrects', async () => {
+	it('S3b a pull that dies before local deletes run converges on retry and never resurrects', async () => {
 		const { w, desktop, mobile } = await setup();
 		await desktopCleanup(desktop);
 		const orig = mobile.vault.fileManager.trashFile;
@@ -105,6 +102,41 @@ describe('sync regression (two devices, fake Drive)', () => {
 		await sleep(20);
 		await mobile.push();
 		expect(same(desktop.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
+	});
+
+	it('startup is manual by default: opening Obsidian never contacts Drive or changes the vault', async () => {
+		const { desktop, mobile } = await setup();
+		await desktopCleanup(desktop);
+		const before = mobile.tree();
+		const calls = netLog.length;
+		await mobile.start(); // harness default = "layout ready, online"; plugin default startupPull = false
+		await sleep(50);
+		expect(netLog.length).toBe(calls);
+		expect(mobile.tree()).toEqual(before);
+	});
+
+	it('startupPull opt-in pulls on startup and converges', async () => {
+		const { desktop, mobile } = await setup();
+		await desktopCleanup(desktop);
+		await mobile.start({ startupPull: true, settings: { startupPull: true } });
+		expect(same(desktop.tree(), mobile.tree())).toBe('IDENTICAL');
+		expect(mobile.ops()).toEqual({});
+	});
+
+	it('a folder deleted on Drive keeps a local-only note inside it (no data loss), and the note reaches Drive on push', async () => {
+		const { w, desktop, mobile } = await setup();
+		await mobile.vault.create('Projects/Beta/mine.md', 'written on phone');
+		await mobile.save();
+		const v = desktop.vault;
+		await v.delete(v.getAbstractFileByPath('Projects/Beta')!);
+		await sleep(20);
+		await desktop.push();
+		await mobile.pull();
+		expect(mobile.tree()).toContain('Projects/Beta/mine.md');
+		expect(mobile.tree()).not.toContain('Projects/Beta/readme.md');
+		await mobile.push();
+		expect(w.drive.snapshotNonConfig()).toContain('Projects/Beta/mine.md');
+		expect(same(mobile.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
 	});
 
 	// ---- known limitations of the legacy design, fixed by the state-based engine (P2-P6) ----

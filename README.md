@@ -27,6 +27,8 @@ Fixes in 3.2.0 compared with 3.1.x:
 
 Upgrading from 3.1.x: it is safe to install over the existing plugin folder on one device at a time. The Drive metadata format has not changed, so devices on 3.1.1 and 3.2.0 can share one Drive vault. Back up your vault first.
 
+The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
+
 ## What is new in 3.5.2: Sync doctor shows the Google permission
 
 **Sync doctor** now asks Google which permission this device's token really has (one read-only request to `oauth2.googleapis.com/tokeninfo`) and prints it, for example `Google permission: drive.file. This plugin can only see and change Drive files it created itself, not the rest of your Drive.` If a token ever has a broad Drive permission (`drive`, `drive.readonly`, `drive.metadata` ...), the report warns that it can see your whole Drive and tells you to revoke it at myaccount.google.com/connections and sign in again. The sign-in page of this plugin only asks for `drive.file`. The token itself is never shown in the report.

@@ -27,6 +27,41 @@ Fixes in 3.2.0 compared with 3.1.x:
 
 Upgrading from 3.1.x: it is safe to install over the existing plugin folder on one device at a time. The Drive metadata format has not changed, so devices on 3.1.1 and 3.2.0 can share one Drive vault. Back up your vault first.
 
+## What is new in 3.3.0
+
+3.3.0 is built on 3.2.0 (manual Pull and Push) and adds three safety features. Nothing else about how Pull and Push work has changed.
+
+### Deleted files go to the Google Drive Trash
+
+When you Push a deletion, the file or folder is **moved to the Google Drive Trash** instead of being deleted forever. This is controlled by **Settings > Google Drive Sync > Move deleted files to the Google Drive Trash** and is **on by default**.
+
+- In Google Drive, open **Trash** to restore something. Drive empties its Trash after about 30 days.
+- A Pull on your other devices notices trashed files and removes them there, like any other deletion.
+- Trashed files still count toward your Google Drive storage until the Trash is emptied.
+- **Every device that syncs the vault must run this fork (3.3.0 or newer).** A device still on the original plugin does not see trashed files as deleted and would keep them (and could upload them again). If you must keep such a device, turn the setting off.
+- Restoring a file from the Drive Trash brings it back in Drive. Whether other devices then download it on the next Pull depends on Google Drive; if it does not show up, edit or re-save the note on the device that still has it and Push.
+- Turn the setting off to go back to permanent deletion (the behaviour of 3.2.0 and the original plugin).
+
+### Changed on Drive and on this device: both versions are kept
+
+Before 3.3.0 the local version silently replaced the Drive version. Now, if a **note** was changed on Drive *and* also changed on this device (not pushed yet), a Pull:
+
+- keeps this device's version in place, and
+- saves the Drive version next to it as `Note (Drive YYYY-MM-DD).md` (`-2`, `-3`, ... if needed), then uploads that copy on your next Push.
+
+Nothing is overwritten and nothing is lost. Review the copy, merge what you need, and delete it. A Pull shows a notice when it made a copy (search your vault for `(Drive `). If both versions are identical, no copy is made. Running the same Pull twice does not make a second copy. This applies to notes only, not to settings or plugin files.
+
+If a device's clock is wrong, you can get a copy that you did not need (harmless, just delete it). The **Sync doctor** now warns when a clock is more than a minute off Google's.
+
+### Warnings
+
+- **Push confirmation:** if a Push would delete more than 20 items, or more than 25% of the items on Drive, a red warning appears above the list. You can still Cancel, or undo single entries with the trash button.
+- **Sync doctor:** also reports the clock difference from Google, warns if Obsidian's **Deleted files** option is **Permanently delete** (a Pull that removes files here could then not be undone), and shows whether Drive deletions go to the Trash.
+
+### Installing with BRAT
+
+In the BRAT plugin choose **Add Beta plugin** and enter `258044aamm-Dev/Obsidian-Google-Drive`. Install on your phone first, then the desktop, before either of them Pushes. The plugin id is unchanged, so this installs over the existing plugin and keeps your settings and Drive link. Back up your vault first.
+
 ## Disclaimer
 
 - This is **not** the [official sync service](https://obsidian.md/sync) provided by Obsidian
@@ -45,7 +80,7 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 - Syncing both ways (from Obsidian to Google Drive and back)
 - Cross-device support
 - Obsidian iOS app support
-- Local file prioritization (automatically resolves conflicts)
+- Conflicts keep both versions: your local note stays and the Drive version is saved as a copy (3.3.0)
 - Multiple vaults per Google account
 - Configuration syncing
 
@@ -74,8 +109,8 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
     - Our plugin does have code to handle conflicts, but it might not be perfect or as the user expects, so try to avoid them
 - Make sure to sync with an adequate internet connection
     - Closing the app or losing connection while syncing could lead to data corruption
-- The plugin does NOT have manual conflict resolution
-    - If you encounter a conflict, the plugin will automatically resolve it with local file prioritization
+- The plugin does NOT have a conflict-resolution screen
+    - If a note changed on Drive and on this device, the local version stays and the Drive version is saved as `Note (Drive YYYY-MM-DD).md` for you to review (3.3.0). Settings and plugin files still use local file prioritization
 - Do **NOT** change the Obsidian configuration folder
     - If you really want to, make a new vault, change the folder, enable the plugin, and copy your files over (you can move the contents of .obsidian to the new folder through file explorer)
 - Vault files and configuration files selected for syncing are stored in Google Drive. They are sent directly between the user's device and the Google Drive API

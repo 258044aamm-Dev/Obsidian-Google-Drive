@@ -16,6 +16,7 @@ import {
 } from './folder-deletion';
 import { isOwnPluginPath } from './own-plugin';
 import { addTrashedAsRemoved } from './trash';
+import { sameBytes, saveConflictCopy } from './conflict-copy';
 
 export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 	let syncNotice = undefined;
@@ -211,6 +212,9 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 
 		updateMap();
 
+		// Copies of Drive versions saved because the same note was also changed on this device.
+		const conflictCopies: string[] = [];
+
 		// Ids of local files/folders that are removed only because an ancestor folder was
 		// removed on Drive (the feed may not list them). Forgotten once the deletion worked.
 		const impliedIds = new Set<string>();
@@ -364,6 +368,27 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 
 			let completed = 0;
 
+			// A note changed both here (not pushed yet) and on Drive keeps this device's
+			// version in place and saves the Drive version next to it as a copy.
+			const keepDriveVersionAsCopy = async (
+				file: FileMetadata,
+				path: string,
+				localFile: TFile | boolean,
+			) => {
+				if (!(localFile instanceof TFile)) return;
+				if (path === vault.configDir || path.startsWith(vault.configDir + '/')) {
+					return;
+				}
+				const driveContent = await t.drive
+					.getFile(file.id)
+					.arrayBuffer();
+				if (sameBytes(await adapter.readBinary(path), driveContent)) {
+					return;
+				}
+				const saved = await saveConflictCopy(t, path, driveContent);
+				if (saved.created) conflictCopies.push(saved.path);
+			};
+
 			await batchAsync(
 				newNotes.map((file: FileMetadata) => async () => {
 					const path = unSplitPath(file.properties);
@@ -375,11 +400,13 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 					completed++;
 
 					if (localFile && operation === 'modify') {
+						await keepDriveVersionAsCopy(file, path, localFile);
 						return;
 					}
 
 					if (localFile && operation === 'create') {
 						t.settings.operations[path] = 'modify';
+						await keepDriveVersionAsCopy(file, path, localFile);
 						return;
 					}
 
@@ -512,6 +539,16 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 		};
 
 		await deleteConfigs();
+
+		if (conflictCopies.length) {
+			// Shown even during the silent pull inside Push: the user should know a copy exists.
+			new Notice(
+				conflictCopies.length === 1
+					? `A note was changed on Drive and on this device. Your version was kept and the Drive version saved as "${conflictCopies[0] as string}".`
+					: `${conflictCopies.length} notes were changed on Drive and on this device. Your versions were kept and the Drive versions saved as copies named "… (Drive YYYY-MM-DD)".`,
+				12000,
+			);
+		}
 
 		if (silenceNotices) return true;
 

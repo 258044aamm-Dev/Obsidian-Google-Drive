@@ -53,6 +53,7 @@ export default defineConfig(
 			'obsidianmd/prefer-window-timers': 'off',
 			'obsidianmd/rule-custom-message': 'off',
 			'no-unsanitized/method': 'off',
+			'obsidianmd/no-global-this': 'off',
 		},
 	},
 );

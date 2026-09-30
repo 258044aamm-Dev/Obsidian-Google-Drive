@@ -1,6 +1,6 @@
 import { describe, it, vi } from 'vitest';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
-vi.stubGlobal('window', globalThis); // eslint-disable-line obsidianmd/no-global-this
+vi.stubGlobal('window', globalThis);
 vi.mock('obsidian', async () => await import('../../tests/sim/obsidian-mock'));
 import { World, diff, sleep, notices, dec, Device } from '../../tests/sim/world';
 import { TFile } from '../../tests/sim/obsidian-mock';

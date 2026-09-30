@@ -15,6 +15,7 @@ import {
 } from 'obsidian';
 import { fixDrivePath } from './helpers/fix_drive_path';
 import { runSyncDoctor } from './helpers/doctor-command';
+import { installStatusBar, type StatusBar } from './helpers/status-bar';
 import { createRestorePointNow, startVaultRestore } from './helpers/history-ui';
 import { HISTORY_MAX_DAYS, HISTORY_MIN_DAYS } from './helpers/history';
 import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
@@ -79,6 +80,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	autoPushTimer?: number;
 	/** Create / modify / delete / rename events seen since load (shown by the Sync doctor). */
 	vaultEventCount = 0;
+	private statusBar?: StatusBar;
 
 	async onload() {
 		const { vault } = this.app;
@@ -114,6 +116,10 @@ export default class ObsidianGoogleDrive extends Plugin {
 				void pull(this);
 			},
 		);
+
+		// Status bar button (desktop only): pending count and a menu of actions.
+		this.statusBar?.remove();
+		this.statusBar = installStatusBar(this);
 
 		this.addCommand({
 			id: 'push',
@@ -258,7 +264,12 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 	debouncedSaveSettings = debounce(this.saveSettings.bind(this), 500, true);
 
+	updateStatusBar(spinning?: boolean) {
+		this.statusBar?.update(spinning);
+	}
+
 	setSpinning(spinning: boolean) {
+		this.updateStatusBar(spinning);
 		[this.ribbonIcon, this.pullRibbonIcon].forEach((icon) => {
 			if (spinning) icon?.addClass('spin');
 			else icon?.removeClass('spin');
@@ -311,6 +322,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 			}
 			this.settings.operations[file.path] = 'create';
 		}
+		this.updateStatusBar();
 		this.debouncedSaveSettings();
 		this.scheduleAutoPush();
 	}
@@ -322,6 +334,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		} else if (!file.path.includes('"')) {
 			this.settings.operations[file.path] = 'delete';
 		}
+		this.updateStatusBar();
 		this.debouncedSaveSettings();
 		this.scheduleAutoPush();
 	}
@@ -334,6 +347,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 			return;
 		}
 		this.settings.operations[file.path] = 'modify';
+		this.updateStatusBar();
 		this.debouncedSaveSettings();
 		this.scheduleAutoPush();
 	}

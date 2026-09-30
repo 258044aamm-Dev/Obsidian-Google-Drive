@@ -47,7 +47,31 @@ export class Modal {
 	close() {}
 }
 export class Setting {}
-export class Menu {}
+export const Platform = { isMobile: false };
+export class Menu {
+	items: { title?: string; icon?: string; disabled?: boolean; click?: () => void; separator?: boolean }[] = [];
+	addItem(cb: (item: any) => void) {
+		const entry: Menu['items'][number] = {};
+		const item: any = {
+			setTitle: (t: string) => ((entry.title = t), item),
+			setIcon: (i: string) => ((entry.icon = i), item),
+			setDisabled: (d: boolean) => ((entry.disabled = d), item),
+			onClick: (fn: () => void) => ((entry.click = fn), item),
+		};
+		cb(item);
+		this.items.push(entry);
+		return this;
+	}
+	addSeparator() {
+		this.items.push({ separator: true });
+		return this;
+	}
+	showAtMouseEvent(_e: unknown) {
+		lastMenu.current = this;
+		return this;
+	}
+}
+export const lastMenu: { current?: Menu } = {};
 export class App {}
 export class PluginSettingTab {}
 export const setIcon = () => {};
@@ -66,6 +90,37 @@ export class Plugin {
 		this.manifest = manifest;
 	}
 	addSettingTab() {}
+	/** Stand-in for the status bar element: records what the plugin put in it. */
+	statusBarEls: any[] = [];
+	addStatusBarItem() {
+		const make = (): any => {
+			const cls = new Set<string>();
+			const el: any = {
+				cls,
+				text: '',
+				attrs: {} as Record<string, string>,
+				listeners: {} as Record<string, (e: any) => void>,
+				children: [] as any[],
+				removed: false,
+				addClass: (c: string) => cls.add(c),
+				removeClass: (c: string) => cls.delete(c),
+				setText: (t: string) => (el.text = t),
+				setAttribute: (k: string, v: string) => (el.attrs[k] = v),
+				addEventListener: (type: string, fn: (e: any) => void) => (el.listeners[type] = fn),
+				createSpan: (o?: { cls?: string }) => {
+					const child = make();
+					if (o?.cls) child.cls.add(o.cls);
+					el.children.push(child);
+					return child;
+				},
+				remove: () => (el.removed = true),
+			};
+			return el;
+		};
+		const el = make();
+		this.statusBarEls.push(el);
+		return el;
+	}
 	addRibbonIcon() {
 		const cls = new Set<string>();
 		return { addClass: (c: string) => cls.add(c), removeClass: (c: string) => cls.delete(c) };

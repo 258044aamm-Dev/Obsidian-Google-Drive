@@ -63,3 +63,14 @@
 	overflow-y: auto;
 	user-select: text;
 }
+
+.ogd-status-bar {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.ogd-status-icon svg {
+	width: 14px;
+	height: 14px;
+}

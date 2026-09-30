@@ -38,6 +38,10 @@ export interface DoctorEnvironment {
 	obsidianTrashOption?: string;
 	/** This device's clock minus Google's clock in milliseconds, or null when it could not be measured. */
 	clockSkewMs?: number | null;
+	/** Notes written after the last sync that are not in the pending list (not yet compared with Drive). */
+	unrecordedEdits?: string[];
+	/** How many create / modify / delete / rename events this plugin has seen since it was loaded. */
+	vaultEvents?: number;
 }
 
 /** A clock that differs from Google's by more than this is reported. */
@@ -189,6 +193,21 @@ export const buildDoctorReport = (input: DoctorInput): DoctorReport => {
 		} else {
 			environmentLines.push('Clock check: this device agrees with Google (within a minute).');
 		}
+	}
+	if (env && env.vaultEvents !== undefined) {
+		environmentLines.push(
+			`Change tracking: ${env.vaultEvents} vault event${env.vaultEvents === 1 ? '' : 's'} seen since the plugin loaded.` +
+				(env.vaultEvents === 0
+					? ' If you have edited notes since then, tracking is not working: restart Obsidian and run Sync doctor again.'
+					: ''),
+		);
+	}
+	if (env && env.unrecordedEdits?.length) {
+		const sample = env.unrecordedEdits.slice(0, 5).join(', ');
+		const more = env.unrecordedEdits.length > 5 ? ` and ${env.unrecordedEdits.length - 5} more` : '';
+		environmentLines.push(
+			`Edited on this device after the last sync but not in the pending list: ${env.unrecordedEdits.length} (${sample}${more}). Push compares these with Drive and adds the ones that really differ.`,
+		);
 	}
 
 	return {

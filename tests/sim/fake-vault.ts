@@ -127,6 +127,23 @@ export class FakeVault {
 		const f = this.idx.get(p);
 		return f instanceof TFolder ? f : null;
 	}
+	/** Like Obsidian: every file (no folders) with a live `stat`. The config folder is not indexed. */
+	getFiles() {
+		return [...this.idx.values()]
+			.filter((f): f is TFile => f instanceof TFile)
+			.map((f) => {
+				if (!('stat' in f)) {
+					Object.defineProperty(f, 'stat', {
+						configurable: true,
+						get: () => {
+							const e = this.disk.get(f.path);
+							return { mtime: e?.mtime ?? 0, ctime: e?.mtime ?? 0, size: e?.data?.length ?? 0 };
+						},
+					});
+				}
+				return f;
+			});
+	}
 	getAllLoadedFiles() {
 		return [...this.idx.values()];
 	}

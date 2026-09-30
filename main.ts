@@ -77,6 +77,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 	private migrationChecked = false;
 	syncing!: boolean;
 	autoPushTimer?: number;
+	/** Create / modify / delete / rename events seen since load (shown by the Sync doctor). */
+	vaultEventCount = 0;
 
 	async onload() {
 		const { vault } = this.app;
@@ -293,6 +295,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	handleCreate(file: TAbstractFile) {
+		this.vaultEventCount++;
 		if (this.settings.operations[file.path] === 'delete') {
 			if (file instanceof TFile) {
 				this.settings.operations[file.path] = 'modify';
@@ -313,6 +316,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	handleDelete(file: TAbstractFile) {
+		this.vaultEventCount++;
 		if (this.settings.operations[file.path] === 'create') {
 			delete this.settings.operations[file.path];
 		} else if (!file.path.includes('"')) {
@@ -323,6 +327,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	handleModify(file: TAbstractFile) {
+		this.vaultEventCount++;
 		const operation = this.settings.operations[file.path];
 		if (operation === 'create' || operation === 'modify') {
 			this.scheduleAutoPush();

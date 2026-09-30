@@ -4,6 +4,7 @@ import { unSplitPath, folderMimeType } from './drive';
 import { getDriveAgent, refreshAccessToken } from './requests';
 import { buildDoctorReport, clockSkewMs, renderReport } from './doctor';
 import { isOwnPluginPath } from './own-plugin';
+import { unrecordedEditCandidates } from './missed-edits';
 
 class DoctorModal extends Modal {
 	constructor(
@@ -106,6 +107,8 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 					vault as unknown as { getConfig?: (key: string) => unknown }
 				).getConfig?.('trashOption') as string | undefined,
 				clockSkewMs: clockSkew,
+				unrecordedEdits: unrecordedEditCandidates(t),
+				vaultEvents: t.vaultEventCount,
 			},
 		});
 		new DoctorModal(t, renderReport(report)).open();

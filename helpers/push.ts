@@ -15,6 +15,7 @@ import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
 import { massDeleteWarning } from './push-warning';
 import { recordRestorePointAfterPush } from './history';
+import { recordMissedEdits } from './missed-edits';
 
 export class ConfirmPushModal extends Modal {
 	proceed: (res: boolean, withoutPull?: boolean) => void;
@@ -33,6 +34,13 @@ export class ConfirmPushModal extends Modal {
 			.setText(
 				'Do you want to push the following changes to Google Drive:',
 			);
+		if (!initialOperations.length) {
+			this.contentEl
+				.createEl('p')
+				.setText(
+					'No changes were detected on this device since the last sync.',
+				);
+		}
 		this.contentEl
 			.createEl('p')
 			.setText(
@@ -288,6 +296,8 @@ export const push = async (
 	withoutPullOption = false,
 ) => {
 	if (t.syncing) return;
+	// Safety net: an edited note whose event was missed would otherwise be skipped.
+	await recordMissedEdits(t);
 	const initialOperations = Object.entries(t.settings.operations).sort(
 		([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
 	); // Alphabetical
@@ -649,6 +659,13 @@ export const push = async (
 
 		await t.saveLog(t.diagnostics.getEntries());
 		const totalFiles = creates.length + modifies.length;
+		if (!totalFiles && !deletes.length) {
+			new Notice(
+				'Nothing to push: no changes were detected on this device since the last sync. If you edited a note, run the doctor command.',
+				8000,
+			);
+			return;
+		}
 		new Notice(
 			`Push complete — ${totalFiles} file${totalFiles === 1 ? '' : 's'} synced.` +
 				(unpulledRemoteChanges

@@ -1,4 +1,7 @@
 // In-memory Google Drive v3 speaking just enough HTTP for the plugin's real drive client.
+import { createHash } from 'node:crypto';
+
+type Revision = { id: string; content: Uint8Array };
 type DFile = {
 	id: string;
 	name: string;
@@ -10,6 +13,9 @@ type DFile = {
 	starred: boolean;
 	trashed: boolean;
 	content: Uint8Array | null;
+	createdTime: string;
+	/** every uploaded version of the content, oldest first; the last one is the head revision */
+	revisions: Revision[];
 };
 type Change = { seq: number; fileId: string; removed: boolean };
 
@@ -35,6 +41,7 @@ export class FakeDrive {
 	failTrashedList = false;
 	/** how far the server clock runs ahead of the test clock; sent as the HTTP Date header of startPageToken */
 	serverClockOffsetMs = 0;
+	private revSeq = 1;
 	constructor(vaultName: string) {
 		this.vaultName = vaultName;
 		this.rootId = this.add({
@@ -46,6 +53,32 @@ export class FakeDrive {
 	}
 	private nid() {
 		return 'id' + this.seq++;
+	}
+	private newRevision(content: Uint8Array): Revision {
+		return { id: 'rev' + this.revSeq++, content: content.slice() };
+	}
+	/** What a listing or metadata request returns: the file plus headRevisionId / md5Checksum / size (no revision bodies). */
+	view(f: DFile) {
+		const { revisions, ...rest } = f;
+		const head = revisions[revisions.length - 1];
+		return {
+			...rest,
+			...(head
+				? {
+						headRevisionId: head.id,
+						md5Checksum: createHash('md5').update(head.content).digest('hex'),
+						size: String(head.content.length),
+					}
+				: {}),
+		};
+	}
+	/** Drive forgets an old (non-head) revision, e.g. after its retention period. Returns false if nothing was removed. */
+	expireRevision(id: string, revisionId: string) {
+		const f = this.files.get(id);
+		if (!f || f.revisions.length < 2 || f.revisions[f.revisions.length - 1]!.id === revisionId) return false;
+		const before = f.revisions.length;
+		f.revisions = f.revisions.filter((r) => r.id !== revisionId);
+		return f.revisions.length < before;
 	}
 	add(p: Partial<DFile>) {
 		const id = this.nid();
@@ -60,6 +93,8 @@ export class FakeDrive {
 			starred: false,
 			trashed: false,
 			content: p.content ?? null,
+			createdTime: new Date().toISOString(),
+			revisions: p.content ? [this.newRevision(p.content)] : [],
 		});
 		this.changes.push({ seq: this.changes.length + 1, fileId: id, removed: false });
 		return id;
@@ -96,14 +131,14 @@ export class FakeDrive {
 	/** what the user sees in Drive: path -> (folder | size) */
 	snapshot() {
 		return [...this.files.values()]
-			.filter((f) => f.properties.obsidian !== 'vault' && !f.trashed)
+			.filter((f) => f.properties.obsidian !== 'vault' && !f.properties.history && !f.trashed)
 			.map((f) => (f.mimeType === FOLDER ? f.properties.path + '/' : f.properties.path))
 			.map((p) => p ?? '?')
 			.sort();
 	}
 	snapshotNonConfig() {
 		return [...this.files.values()]
-			.filter((f) => f.properties.obsidian !== 'vault' && f.properties.config !== 'true' && !f.trashed)
+			.filter((f) => f.properties.obsidian !== 'vault' && !f.properties.history && f.properties.config !== 'true' && !f.trashed)
 			.map((f) => String(f.mimeType === FOLDER ? f.properties.path + '/' : f.properties.path))
 			.sort();
 	}
@@ -133,6 +168,18 @@ export class FakeDrive {
 			}
 			return any && ok;
 		});
+	}
+
+	/** Queries without the vault/modifiedTime conventions (the history folder and restore points): properties, parents, mimeType, trashed. */
+	private evalPlainQ(q: string, f: DFile): boolean {
+		if (/(^|\band )trashed=true/.test(q) !== f.trashed) return false;
+		for (const m of q.matchAll(/properties has \{ key='((?:[^'\\]|\\.)*)' and value='((?:[^'\\]|\\.)*)' ?\}/g)) {
+			if (f.properties[unesc(m[1] as string)] !== unesc(m[2] as string)) return false;
+		}
+		for (const m of q.matchAll(/'((?:[^'\\]|\\.)*)' in parents/g)) if (!f.parents.includes(unesc(m[1] as string))) return false;
+		const mime = /mimeType='([^']*)'/.exec(q);
+		if (mime && f.mimeType !== mime[1]) return false;
+		return true;
 	}
 
 	private parseForm(body: ArrayBuffer, contentType: string) {
@@ -174,15 +221,27 @@ export class FakeDrive {
 			if (!Number.isFinite(from) || from < 1) return { status: 400, text: 'Invalid Value', json: {} };
 			const changes = this.changes
 				.filter((c) => c.seq >= from)
-				.map((c) => ({ kind: 'drive#change', removed: c.removed, fileId: c.fileId, file: this.files.get(c.fileId) }));
+				.map((c) => {
+					const file = this.files.get(c.fileId);
+					return { kind: 'drive#change', removed: c.removed, fileId: c.fileId, file: file ? this.view(file) : undefined };
+				});
 			return ok({ changes, newStartPageToken: String(this.changes.length + 1) });
 		}
 		if (method === 'GET' && path === '/drive/v3/files') {
 			const q = url.searchParams.get('q') ?? '';
 			if (this.failTrashedList && q.startsWith('trashed=true')) return { status: 500, text: 'injected trash listing failure', json: {} };
-			return ok({ files: [...this.files.values()].filter((f) => this.evalQ(q, f)) });
+			if (q.includes("key='history'")) return ok({ files: [...this.files.values()].filter((f) => this.evalPlainQ(q, f)).map((f) => this.view(f)) });
+			return ok({ files: [...this.files.values()].filter((f) => this.evalQ(q, f)).map((f) => this.view(f)) });
 		}
-		let m = /^\/drive\/v3\/files\/([^/]+)$/.exec(path);
+		let m = /^\/drive\/v3\/files\/([^/]+)\/revisions\/([^/]+)$/.exec(path);
+		if (m && method === 'GET') {
+			const f = this.files.get(m[1]!);
+			const r = f?.revisions.find((x) => x.id === m![2]);
+			if (!f || !r) return { status: 404, text: 'Revision not found', json: {} };
+			if (url.searchParams.get('alt') === 'media') return { status: 200, arrayBuffer: r.content.slice().buffer, text: '', json: {} };
+			return ok({ id: r.id, size: String(r.content.length) });
+		}
+		m = /^\/drive\/v3\/files\/([^/]+)$/.exec(path);
 		if (m && method === 'GET') {
 			const f = this.files.get(m[1]!);
 			if (!f) return { status: 404, text: 'notFound', json: {} };
@@ -190,7 +249,7 @@ export class FakeDrive {
 				const b = (f.content ?? new Uint8Array()).slice().buffer;
 				return { status: 200, arrayBuffer: b, text: '', json: {} };
 			}
-			return ok(f);
+			return ok(this.view(f));
 		}
 		if (m && method === 'DELETE') {
 			return this.remove(m[1]!) ? { status: 204, text: '', json: {} } : { status: 404, text: 'notFound', json: {} };
@@ -218,6 +277,7 @@ export class FakeDrive {
 			const form = this.parseForm(req.body, req.contentType);
 			Object.assign(f, JSON.parse(Buffer.from(form.metadata!).toString()));
 			f.content = form.file!;
+			f.revisions.push(this.newRevision(form.file!));
 			this.changes.push({ seq: this.changes.length + 1, fileId: f.id, removed: false });
 			return ok({ id: f.id });
 		}

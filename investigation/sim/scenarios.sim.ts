@@ -174,7 +174,7 @@ describe('reproduction', () => {
 		// Phone = copy of the Drive folder, exactly as README "New Devices" says
 		const mobile = w.device('mobile2');
 		const dir = '.obsidian/plugins/google-drive-sync';
-		for (const f of [...w.drive.files.values()].filter((f) => f.properties.obsidian !== 'vault').sort((a, b) => a.properties.path!.length - b.properties.path!.length)) {
+		for (const f of [...w.drive.files.values()].filter((f) => f.properties.obsidian !== 'vault' && !f.properties.history).sort((a, b) => a.properties.path!.length - b.properties.path!.length)) {
 			const p = f.properties.path!;
 			if (p.endsWith('/main.js') || p.endsWith('/manifest.json')) continue;
 			if (f.mimeType.includes('folder')) mobile.vault.disk.set(p, { type: 'folder', mtime: Date.now() });
@@ -251,7 +251,7 @@ describe('reproduction', () => {
 	it('S5b README-bootstrapped phone: desktop edits a note; phone pulls; phone pushes another note', async () => {
 		const { w, desktop } = await setup();
 		const mobile = w.device('mobile2');
-		for (const f of [...w.drive.files.values()].filter((f) => f.properties.obsidian !== 'vault').sort((a, b) => a.properties.path!.length - b.properties.path!.length)) {
+		for (const f of [...w.drive.files.values()].filter((f) => f.properties.obsidian !== 'vault' && !f.properties.history).sort((a, b) => a.properties.path!.length - b.properties.path!.length)) {
 			const p = f.properties.path!;
 			if (p.endsWith('/main.js') || p.endsWith('/manifest.json')) continue;
 			if (f.mimeType.includes('folder')) mobile.vault.disk.set(p, { type: 'folder', mtime: Date.now() });

@@ -14,10 +14,16 @@ import { setup, desktopCleanup, same, simDefaults } from './scenario-helpers';
 import { TFile, modalTexts } from './obsidian-mock';
 import { runSyncDoctor } from '../../helpers/doctor-command';
 
-// The whole suite runs twice: with Drive deletes going to the Trash (default) and permanent (legacy).
-describe.each([true, false])('sync regression (two devices, fake Drive), deleteToTrash=%s', (trash) => {
+// The whole suite runs three times: Drive deletes to the Trash with version history on (the defaults), permanent
+// deletes (legacy) with history on, and the defaults with version history off (3.3.0 behaviour).
+describe.each([
+	[true, true],
+	[false, true],
+	[true, false],
+])('sync regression (two devices, fake Drive), deleteToTrash=%s, historyEnabled=%s', (trash, history) => {
 	beforeEach(() => {
 		simDefaults.deleteToTrash = trash;
+		simDefaults.historyEnabled = history;
 	});
 
 	it('S0 clean bootstrap: phone == desktop == Drive, no pending ops', async () => {

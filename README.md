@@ -27,6 +27,10 @@ Fixes in 3.2.0 compared with 3.1.x:
 
 Upgrading from 3.1.x: it is safe to install over the existing plugin folder on one device at a time. The Drive metadata format has not changed, so devices on 3.1.1 and 3.2.0 can share one Drive vault. Back up your vault first.
 
+## What is new in 3.5.0: status bar button (desktop)
+
+A **Drive** button now sits in the status bar at the bottom right of Obsidian, next to the word and character counts. It shows the number of pending changes on this device (`Drive 3`, or just `Drive` when nothing is pending, `Drive …` while a sync runs). Click it for a menu: **Pull**, **Push**, **Sync doctor**, **Restore the whole vault from history** and **Create a restore point now**. These are the same actions as the commands; Push still opens its confirmation window. Obsidian on Android has no status bar, so the button exists on desktop only (the ribbon and command palette work on both).
+
 ## What is new in 3.4.1: Push no longer pulls
 
 Until now (as in the original plugin) every Push began with a hidden Pull, which could download, overwrite or delete files on this device without you pressing Pull. That is gone:

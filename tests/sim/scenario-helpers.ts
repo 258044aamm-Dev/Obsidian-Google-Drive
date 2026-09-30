@@ -2,7 +2,7 @@ import { World, Device, sleep, diff } from './world';
 
 /** Root of the plugin source under test (this repo). */
 export const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
-export const VERSION = '3.4.1';
+export const VERSION = '3.5.0';
 
 /** settings applied to every device created by `setup()`; the regression suite runs once per value of `deleteToTrash` */
 export const simDefaults: Record<string, unknown> = {};

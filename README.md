@@ -6,6 +6,26 @@ This is an unofficial sync plugin for Obsidian, specifically for Google Drive.
 
 If you are updating your plugin from 2.x.x to 3.x.x, the plugin now fixes Google Drive file paths automatically the first time it syncs — no manual step is needed. This repairs Obsidian's understanding of Google Drive's file system, which could be inconsistent after the 2.x.x deleted-file handling issue. The "Fix Google Drive paths" command remains available if you ever need to run it manually.
 
+## Manual sync (fork 3.2.0)
+
+This fork is **manual by default**. Nothing is pulled or pushed unless you ask for it:
+
+- **Pull** (cloud icon in the ribbon, the `Pull from Google Drive` command, or the **Pull** button in the plugin settings) brings Drive's state to this device: new and changed files are downloaded, and files or folders deleted or moved on Drive are removed here.
+- **Push** (sync icon in the ribbon, the `Push to Google Drive` command, or the **Push** button in settings) sends this device's changes to Drive.
+- **Sync doctor** (command or settings button) compares this device with Drive and shows what a Pull or Push would do. It only reads; it never changes anything.
+- `Pull when Obsidian starts` and `Automatically push changes` are both **off** by default.
+
+Fixes in 3.2.0 compared with 3.1.x:
+
+- Folders deleted or moved on another device are now removed on a Pull. Before, empty "ghost" folders stayed behind and the next Push put them back on Drive.
+- A folder that still holds local-only notes is never deleted by a Pull; those notes are kept and uploaded on the next Push.
+- If a Pull is interrupted, the next Pull still knows which local files Drive had deleted, so they are not uploaded again.
+- The plugin's own folder (`main.js`, `manifest.json`, `data.json`) is never synced. `data.json` holds your tokens and pending operations, and overwriting it or deleting it from another device could break sync.
+- The one-time path migration only adds information; it no longer replaces the saved id map.
+- Deleting a file that is already gone on Drive (HTTP 404) counts as success instead of failing the whole Push.
+
+Upgrading from 3.1.x: it is safe to install over the existing plugin folder on one device at a time. The Drive metadata format has not changed, so devices on 3.1.1 and 3.2.0 can share one Drive vault. Back up your vault first.
+
 ## Disclaimer
 
 - This is **not** the [official sync service](https://obsidian.md/sync) provided by Obsidian
@@ -74,15 +94,18 @@ Note: Instructions are also on this plugin's homepage with images at [https://og
 
 ## Use
 
-- After setup, the plugin will automatically pull changes from Google Drive once when Obsidian finishes opening the vault
-    - This sync is from Google Drive TO Obsidian, not the other way around (pulling cloud files)
+- After setup, sync manually: Pull before you start editing on a device and Push when you are done
+    - Pull is from Google Drive TO Obsidian, not the other way around (pulling cloud files)
+    - You can make it pull automatically when Obsidian opens by turning on `Pull when Obsidian starts` in the plugin settings (off by default)
     - The plugin prioritizes unsynced local changes except for local file deletions (cloud file creation/modification will overwrite local deletion)
     - You can pull by running the `Pull from Google Drive` command
     - Pulling new plugins/configurations may require a restart of Obsidian
-- To sync local changes to Google Drive, click the sync button on the ribbon or run the `Push to Google Drive` command from the command palette
+- To sync local changes to Google Drive, click the sync (Push) button on the ribbon or run the `Push to Google Drive` command from the command palette
     - While you do not have to sync before you close Obsidian, we suggest doing so to ensure that Google Drive is up to date and no conflicts occur
     - This will pull changes before pushing changes to Google Drive
 - You can enable `Automatically push changes` in the plugin settings to push one minute after the most recent local file change. This setting is disabled by default
+- Not sure what a Pull or Push would do? Run `Sync doctor (read-only check of this device vs Google Drive)`; it lists files deleted on Drive, files only on Drive, new local files, duplicate paths and pending operations
+- `Fix Google Drive paths` is an advanced repair: it rebuilds the saved id map from Drive and clears pending operations. Run `Sync doctor` first; files that were deleted on Drive but still exist locally are then no longer recognised as deleted, so delete them by hand instead of pushing
 - If you want to set your local vault state to the Google Drive state, run the `Reset local vault to Google Drive` command
 - If you mess with the vault's files while Obsidian is closed, try to revert any of the changes you made
 

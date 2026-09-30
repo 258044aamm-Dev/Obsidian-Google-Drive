@@ -12,6 +12,7 @@ import { pull } from './pull';
 import { isOwnPluginPath } from './own-plugin';
 import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
+import { massDeleteWarning } from './push-warning';
 
 export class ConfirmPushModal extends Modal {
 	proceed: (res: boolean) => void;
@@ -30,6 +31,17 @@ export class ConfirmPushModal extends Modal {
 			.setText(
 				'Do you want to push the following changes to Google Drive:',
 			);
+		const warning = massDeleteWarning(
+			initialOperations,
+			Object.keys(t.settings.driveIdToPath).length,
+			t.settings.deleteToTrash === true,
+		);
+		if (warning) {
+			this.contentEl.createEl('p', {
+				text: warning,
+				cls: 'mod-warning',
+			});
+		}
 		const container = this.contentEl.createDiv();
 
 		const render = (operations: typeof initialOperations) => {

@@ -15,7 +15,7 @@ const e2eeModule = () => import(ROOT + '/helpers/e2ee.ts');
 const cryptoModule = () => import(ROOT + '/helpers/crypto.ts');
 
 const driveFiles = (w: any) => [...w.drive.files.values()].filter((f: any) => !f.trashed && f.id !== w.drive.rootId && f.properties.obsidian !== 'vault');
-const byPath = (w: any, path: string) => driveFiles(w).find((f: any) => w.drive.shown(f) === path && f.mimeType !== FOLDER) as any;
+const byPath = (w: any, path: string) => driveFiles(w).find((f: any) => w.drive.shown(f) === path && f.mimeType !== FOLDER);
 const flip = (bytes: Uint8Array, at: number) => {
 	const copy = bytes.slice();
 	copy[at] = copy[at]! ^ 1;
@@ -40,7 +40,7 @@ describe('what Drive stores', () => {
 		const words = ['Inbox', 'Projects', 'Alpha', 'Beta', 'Archive', 'Journal', 'secret-plan', 'readme', 'old.md', 'root.md', '日本語', 'ノート', 'TOP SECRET'];
 		const latin = (b: Uint8Array) => Buffer.from(b).toString('latin1');
 		let checked = 0;
-		for (const f of driveFiles(w) as any[]) {
+		for (const f of driveFiles(w)) {
 			const seen = JSON.stringify([f.name, f.properties, f.description]) + (f.content ? latin(f.content) : '');
 			for (const word of words) expect(seen, `${f.name} / ${word}`).not.toContain(Buffer.from(word).toString('latin1'));
 			for (const word of words) expect(seen).not.toContain(word);
@@ -221,7 +221,7 @@ describe('passphrase and key handling', () => {
 		await desktop.push();
 
 		const fresh = { get: async () => undefined, put: async () => undefined, delete: async () => undefined };
-		mobile.keyStore = fresh as any;
+		mobile.keyStore = fresh;
 		await mobile.start({ startupPull: false });
 		expect(mobile.plugin.e2ee).toBeUndefined();
 		expect(mobile.plugin.settings.e2eeEnabled).toBe(true);

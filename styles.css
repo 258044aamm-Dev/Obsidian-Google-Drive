@@ -56,3 +56,10 @@
 	color: var(--text-error);
 	font-weight: bolder;
 }
+
+.ogd-doctor-report {
+	white-space: pre-wrap;
+	max-height: 50vh;
+	overflow-y: auto;
+	user-select: text;
+}

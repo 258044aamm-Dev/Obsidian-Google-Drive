@@ -15,6 +15,7 @@ import {
 	TFolder,
 } from 'obsidian';
 import { fixDrivePath } from './helpers/fix_drive_path';
+import { runSyncDoctor } from './helpers/doctor-command';
 import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
 import type { DiagnosticEntry, SyncPhase } from './helpers/diagnostics';
 
@@ -124,6 +125,12 @@ export default class ObsidianGoogleDrive extends Plugin {
 			id: 'fix-drive-path',
 			name: 'Fix Google Drive paths',
 			callback: () => fixDrivePath(this),
+		});
+
+		this.addCommand({
+			id: 'sync-doctor',
+			name: 'Sync doctor (read-only check of this device vs Google Drive)',
+			callback: () => runSyncDoctor(this),
 		});
 
 		this.addCommand({
@@ -699,6 +706,44 @@ class SettingsTab extends PluginSettingTab {
 						);
 						return;
 					},
+				},
+			},
+			{
+				name: 'Sync now',
+				render: (setting) => {
+					setting.settingEl.empty();
+					setting.setName('Sync now');
+					setting.setDesc(
+						'Pull brings changes from Google Drive to this device. Push sends this device\'s changes to Google Drive. The doctor only checks and changes nothing.',
+					);
+					const btns = setting.settingEl.createDiv({
+						cls: 'setting-item-control',
+					});
+					const pullBtn = btns.createEl('button', { text: 'Pull' });
+					pullBtn.addEventListener('click', () => {
+						if (this.plugin.syncing) return;
+						void pull(this.plugin);
+					});
+					const pushBtn = btns.createEl('button', { text: 'Push' });
+					pushBtn.addEventListener('click', () => {
+						if (this.plugin.syncing) return;
+						void push(this.plugin);
+					});
+					const doctorBtn = btns.createEl('button', {
+						text: 'Sync doctor',
+					});
+					doctorBtn.addEventListener('click', () => {
+						void runSyncDoctor(this.plugin);
+					});
+				},
+			},
+			{
+				name: 'Pull when Obsidian starts',
+				desc: 'Off by default: sync only happens when you press Pull or Push. Turn on to pull from Google Drive every time Obsidian opens (takes effect after restarting Obsidian).',
+				control: {
+					type: 'toggle',
+					key: 'startupPull',
+					defaultValue: false,
 				},
 			},
 			{

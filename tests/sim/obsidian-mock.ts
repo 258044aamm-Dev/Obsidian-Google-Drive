@@ -26,7 +26,26 @@ export class Notice {
 	setMessage(_m: string) {}
 	hide() {}
 }
-export class Modal {}
+/** Text of every element a Modal created in onOpen (lets tests read the sync doctor report). */
+export const modalTexts: string[] = [];
+export class Modal {
+	app: unknown;
+	contentEl = {
+		createEl: (_tag: string, o?: { text?: string }) => {
+			if (o?.text) modalTexts.push(o.text);
+			return { addEventListener: () => {} };
+		},
+		empty: () => {},
+	};
+	constructor(app?: unknown) {
+		this.app = app;
+	}
+	setTitle(_t: string) {}
+	open() {
+		(this as unknown as { onOpen?: () => void }).onOpen?.();
+	}
+	close() {}
+}
 export class Setting {}
 export class Menu {}
 export class App {}

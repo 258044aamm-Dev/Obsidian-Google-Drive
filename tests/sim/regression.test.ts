@@ -11,7 +11,8 @@ vi.stubGlobal('window', globalThis);
 vi.mock('obsidian', async () => await import('./obsidian-mock'));
 import { sleep, dec, netLog } from './world';
 import { setup, desktopCleanup, same } from './scenario-helpers';
-import { TFile } from './obsidian-mock';
+import { TFile, modalTexts } from './obsidian-mock';
+import { runSyncDoctor } from '../../helpers/doctor-command';
 
 describe('sync regression (two devices, fake Drive)', () => {
 	it('S0 clean bootstrap: phone == desktop == Drive, no pending ops', async () => {
@@ -189,6 +190,27 @@ describe('sync regression (two devices, fake Drive)', () => {
 			w.drive.remove(fileId);
 			await mobile.pull();
 			expect(dec(local())).toBe('//plugin');
+		});
+	});
+
+	describe('sync doctor', () => {
+		it('reports what a Pull would do, and changes nothing (GET requests only)', async () => {
+			const { desktop, mobile } = await setup();
+			await desktopCleanup(desktop);
+			const stateBefore = JSON.stringify(mobile.plugin.settings);
+			const treeBefore = mobile.tree();
+			const calls = netLog.length;
+			modalTexts.length = 0;
+			await runSyncDoctor(mobile.plugin);
+			const writes = netLog.slice(calls).filter((l) => !l.startsWith('GET '));
+			expect(writes).toEqual([]);
+			expect(JSON.stringify(mobile.plugin.settings)).toBe(stateBefore);
+			expect(mobile.tree()).toEqual(treeBefore);
+			const report = modalTexts.join('\n');
+			expect(report).toContain('Deleted on Drive, still here (Pull removes)');
+			expect(report).toContain('Archive/old.md');
+			expect(report).toContain('Run Pull to remove them here');
+			expect(report).not.toContain('refreshToken');
 		});
 	});
 

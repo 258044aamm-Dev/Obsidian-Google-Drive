@@ -240,6 +240,44 @@ describe.each([
 		});
 	});
 
+	describe('sync doctor: Google permission check', () => {
+		const run = async (mobile: any) => {
+			modalTexts.length = 0;
+			const calls = netLog.length;
+			await runSyncDoctor(mobile.plugin);
+			return { text: modalTexts.join('\n'), calls: netLog.slice(calls) };
+		};
+
+		it('shows drive.file as limited to the plugin\'s own files; one GET, no token in the report', async () => {
+			const { mobile } = await setup();
+			mobile.plugin.accessToken.token = 'SECRET-ACCESS-TOKEN-123';
+			const { text, calls } = await run(mobile);
+			expect(text).toContain('Google permission: drive.file. This plugin can only see and change Drive files it created');
+			expect(calls.filter((l) => !l.startsWith('GET '))).toEqual([]);
+			expect(calls.filter((l) => l.includes('/tokeninfo')).length).toBe(1);
+			expect(text).not.toContain('WHOLE Drive');
+			expect(text).not.toContain('SECRET-ACCESS-TOKEN-123');
+		});
+
+		it('warns when the token can see the whole Drive', async () => {
+			const { w, mobile } = await setup();
+			w.drive.grantedScope = 'https://www.googleapis.com/auth/drive';
+			const { text } = await run(mobile);
+			expect(text).toContain('WHOLE Drive');
+			expect(text).toContain('Google permission: drive');
+			w.drive.grantedScope = 'https://www.googleapis.com/auth/drive.file';
+		});
+
+		it('still works and says so when Google does not answer', async () => {
+			const { w, mobile } = await setup();
+			w.drive.tokenInfoStatus = 400;
+			const { text } = await run(mobile);
+			expect(text).toContain('Google permission: could not be checked');
+			expect(text).toContain('Clock check');
+			w.drive.tokenInfoStatus = 200;
+		});
+	});
+
 	describe('Drive reports a deleted folder but not its descendants', () => {
 		it('removes the synced descendants, keeps edited / local-only ones, and does not resurrect anything', async () => {
 			const { w, desktop, mobile } = await setup({ eventsForChildren: false });

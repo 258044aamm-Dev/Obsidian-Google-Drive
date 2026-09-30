@@ -42,7 +42,36 @@ export interface DoctorEnvironment {
 	unrecordedEdits?: string[];
 	/** How many create / modify / delete / rename events this plugin has seen since it was loaded. */
 	vaultEvents?: number;
+	/** Permissions (OAuth scopes) Google says this device's token has, or null when they could not be read. */
+	grantedScopes?: string[] | null;
 }
+
+const SCOPE_PREFIX = 'https://www.googleapis.com/auth/';
+/** Scopes that let an app see Drive files it did not create. */
+const BROAD_DRIVE_SCOPES = ['drive', 'drive.readonly', 'drive.metadata', 'drive.metadata.readonly', 'drive.photos.readonly'];
+
+/** Scopes from Google's tokeninfo answer (a space separated string). */
+export const parseScopes = (scope: unknown): string[] | null =>
+	typeof scope === 'string' && scope.trim() ? scope.trim().split(/\s+/) : null;
+
+/** One line for the report, plus a warning when the token can see more than the plugin's own files. */
+export const describeGrantedScopes = (scopes: string[] | null): { line: string; warning?: string } => {
+	if (!scopes) return { line: 'Google permission: could not be checked (no answer from Google).' };
+	const short = (x: string) => (x.startsWith(SCOPE_PREFIX) ? x.slice(SCOPE_PREFIX.length) : x);
+	const broad = scopes.map(short).filter((x) => BROAD_DRIVE_SCOPES.includes(x));
+	if (broad.length) {
+		return {
+			line: `Google permission: ${scopes.map(short).join(', ')}`,
+			warning: `This device's Google token can see your WHOLE Drive (${broad.join(', ')}), not just the files this plugin created. Revoke it at myaccount.google.com/connections and sign in again with the plugin's sign-in page, which only asks for "drive.file".`,
+		};
+	}
+	if (scopes.map(short).includes('drive.file')) {
+		return {
+			line: 'Google permission: drive.file. This plugin can only see and change Drive files it created itself, not the rest of your Drive.',
+		};
+	}
+	return { line: `Google permission: ${scopes.map(short).join(', ')} (no Drive access).` };
+};
 
 /** A clock that differs from Google's by more than this is reported. */
 export const CLOCK_SKEW_LIMIT_MS = 60_000;
@@ -201,6 +230,11 @@ export const buildDoctorReport = (input: DoctorInput): DoctorReport => {
 					? ' If you have edited notes since then, tracking is not working: restart Obsidian and run Sync doctor again.'
 					: ''),
 		);
+	}
+	if (env && env.grantedScopes !== undefined) {
+		const { line, warning } = describeGrantedScopes(env.grantedScopes);
+		environmentLines.push(line);
+		if (warning) verdict.push(warning);
 	}
 	if (env && env.unrecordedEdits?.length) {
 		const sample = env.unrecordedEdits.slice(0, 5).join(', ');

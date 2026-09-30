@@ -1,8 +1,8 @@
-import { Modal, Notice, TFile, TFolder } from 'obsidian';
+import { Modal, Notice, requestUrl, TFile, TFolder } from 'obsidian';
 import type ObsidianGoogleDrive from '../main';
 import { unSplitPath, folderMimeType } from './drive';
 import { getDriveAgent, refreshAccessToken } from './requests';
-import { buildDoctorReport, clockSkewMs, renderReport } from './doctor';
+import { buildDoctorReport, clockSkewMs, parseScopes, renderReport } from './doctor';
 import { isOwnPluginPath } from './own-plugin';
 import { unrecordedEditCandidates } from './missed-edits';
 
@@ -53,6 +53,24 @@ const measureClockSkew = async (t: ObsidianGoogleDrive): Promise<number | null> 
 	}
 };
 
+/** Asks Google which permissions this device's access token has (one GET to Google; never throws). */
+const readGrantedScopes = async (t: ObsidianGoogleDrive): Promise<string[] | null> => {
+	try {
+		const token = t.accessToken.token;
+		if (!token) return null;
+		const response = await requestUrl({
+			url: `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`,
+			method: 'GET',
+			throw: false,
+		});
+		if (response.status < 200 || response.status >= 300) return null;
+		const info = response.json as { scope?: unknown } | undefined;
+		return parseScopes(info?.scope);
+	} catch {
+		return null;
+	}
+};
+
 /** Compares this device with Google Drive using GET requests only, then shows the result. */
 export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 	if (t.syncing) {
@@ -76,6 +94,7 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 		}
 		const { vault } = t.app;
 		const clockSkew = await measureClockSkew(t);
+		const grantedScopes = await readGrantedScopes(t);
 		const localPaths = vault
 			.getAllLoadedFiles()
 			.filter((f) => f instanceof TFile || f instanceof TFolder)
@@ -109,6 +128,7 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 				clockSkewMs: clockSkew,
 				unrecordedEdits: unrecordedEditCandidates(t),
 				vaultEvents: t.vaultEventCount,
+				grantedScopes,
 			},
 		});
 		new DoctorModal(t, renderReport(report)).open();

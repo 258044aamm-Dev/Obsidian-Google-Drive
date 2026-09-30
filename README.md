@@ -27,6 +27,10 @@ Fixes in 3.2.0 compared with 3.1.x:
 
 Upgrading from 3.1.x: it is safe to install over the existing plugin folder on one device at a time. The Drive metadata format has not changed, so devices on 3.1.1 and 3.2.0 can share one Drive vault. Back up your vault first.
 
+## What is new in 3.5.2: Sync doctor shows the Google permission
+
+**Sync doctor** now asks Google which permission this device's token really has (one read-only request to `oauth2.googleapis.com/tokeninfo`) and prints it, for example `Google permission: drive.file. This plugin can only see and change Drive files it created itself, not the rest of your Drive.` If a token ever has a broad Drive permission (`drive`, `drive.readonly`, `drive.metadata` ...), the report warns that it can see your whole Drive and tells you to revoke it at myaccount.google.com/connections and sign in again. The sign-in page of this plugin only asks for `drive.file`. The token itself is never shown in the report.
+
 ## What is new in 3.5.1: config files no longer bounce between devices
 
 Upstream issue #55: after a Pull, the settings and plugin files it had downloaded (`app.json`, other plugins' `main.js`, `styles.css`, `manifest.json` ...) were treated as changed on this device and uploaded again by the next Push. With two devices that repeats forever, and every Push re-uploads the same megabytes. A file that a sync downloaded is no longer counted as a local change. A settings file you really changed on this device and did not push yet is still pushed.

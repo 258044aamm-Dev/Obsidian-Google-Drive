@@ -39,6 +39,9 @@ export class FakeDrive {
 	trashEmitsRemoved = false;
 	/** make the "which files are in the Trash" listing fail (Pull must carry on without it) */
 	failTrashedList = false;
+	/** what Google's tokeninfo endpoint answers: the scopes of the access token, and whether it answers at all */
+	grantedScope = 'https://www.googleapis.com/auth/drive.file';
+	tokenInfoStatus = 200;
 	/** how far the server clock runs ahead of the test clock; sent as the HTTP Date header of startPageToken */
 	serverClockOffsetMs = 0;
 	private revSeq = 1;
@@ -207,6 +210,10 @@ export class FakeDrive {
 				this.failNext.splice(this.failNext.indexOf(f), 1);
 				return { status: f.status, text: 'injected failure', json: {} };
 			}
+		}
+		if (url.hostname === 'oauth2.googleapis.com' && path === '/tokeninfo') {
+			if (this.tokenInfoStatus !== 200) return { status: this.tokenInfoStatus, text: '', json: {} };
+			return ok({ scope: this.grantedScope, expires_in: '3599' });
 		}
 		if (url.hostname === 'www.google.com') return { status: this.offline ? 503 : 204, text: '', json: {} };
 

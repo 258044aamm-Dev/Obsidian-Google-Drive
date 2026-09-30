@@ -27,6 +27,32 @@ Fixes in 3.2.0 compared with 3.1.x:
 
 Upgrading from 3.1.x: it is safe to install over the existing plugin folder on one device at a time. The Drive metadata format has not changed, so devices on 3.1.1 and 3.2.0 can share one Drive vault. Back up your vault first.
 
+## What is new in 3.4.0: version history for the whole vault
+
+After **every successful Push** the plugin saves a small **restore point** on Google Drive: a list of every file in the vault with its Google Drive id and version. Google Drive itself keeps the older versions of files (and deleted files in its Trash) for about 30 days, so a restore point is enough to take the whole vault back to that moment. Your notes are not stored a second time.
+
+- **Where:** a folder named `<vault name> - Obsidian Google Drive history (do not edit)` at the top level of My Drive, next to (not inside) the vault folder. Do not delete or edit it. Other devices, and the original plugin, never treat it as vault content.
+- **Settings:** *Save a restore point after every Push* (on by default) and *Keep restore points for (days)* (1 to 30, default 10). Older restore points are deleted after each Push; the newest is always kept. More than 30 days makes no sense, because Drive forgets old versions after about that long.
+- **Commands:** `Create a restore point now (version history)` and `Restore the whole vault to an earlier restore point (version history)` (also buttons under *Version history* in the settings).
+
+### How a restore works
+
+1. The restore only starts when this device has nothing waiting to be pushed, and **Automatically push changes** is off. It then runs a normal **Pull**, so the device is level with Drive.
+2. You choose a restore point and see what would change: files that go back to their old content, deleted files that come back, and files created since then that are removed (through Obsidian's own *Deleted files* setting). Files whose old version Drive no longer has are listed and left alone.
+3. Before anything changes, a restore point of the current state is saved. **To undo a restore, restore that point.**
+4. The restore changes **this device only**. Nothing is uploaded. Look through the vault, then press **Push**: its confirmation lists everything that will change on Drive, with the red warning for large deletions.
+
+The checkbox *Also restore settings and plugin files* (on by default) covers the files in the configuration folder that this plugin syncs (settings files and the files of your other plugins). Themes and snippets are not synced by this plugin, so they cannot be restored. This plugin's own folder is never touched. Restart Obsidian after restoring settings or plugins.
+
+### Limits to know about
+
+- Only Pushes made from devices running this fork create restore points. Restore points are per Push, not per edit. (Obsidian's core *File recovery* plugin is a useful extra for per-note snapshots on one device.)
+- Restore points and old versions are kept by Google Drive for about 30 days at most. If the option *Move deleted files to Google Drive Trash* is off, a file deleted from Drive is gone for good and cannot be brought back.
+- Old file versions and trashed files use Google Drive storage until Drive removes them.
+- If something cannot be downloaded, the restore reports it and carries on with the rest. Push what was done, then run the restore again.
+- Restoring plugin files can surprise those plugins: restart Obsidian, and use the checkbox to leave them out if unsure.
+- I could not test this against a real Google Drive. Try it on a copy of the vault with its own Drive folder first.
+
 ## What is new in 3.3.0
 
 3.3.0 is built on 3.2.0 (manual Pull and Push) and adds three safety features. Nothing else about how Pull and Push work has changed.

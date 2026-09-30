@@ -4,6 +4,15 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.6.1 - 2026-09-30
+
+### Fixed
+- **Settings rows showed only their buttons** (no title, no description). This hit *End-to-end encryption*, *Sync now*, *Version history* and *Diagnostics*: the rows were cleared after the title and text had been written into them. They now keep their title and description.
+- Turning encryption on with the second passphrase box left empty now says "Type the passphrase a second time" instead of "The two passphrases are different". The same for changing the passphrase.
+
+### Tests
+- A test that a settings row keeps its title, description and buttons, and one for the two passphrase messages.
+
 ## 3.6.0 - 2026-09-30
 
 ### Added

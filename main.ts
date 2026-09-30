@@ -17,6 +17,7 @@ import { fixDrivePath } from './helpers/fix_drive_path';
 import { runSyncDoctor } from './helpers/doctor-command';
 import { installStatusBar, type StatusBar } from './helpers/status-bar';
 import { createKeyStore, loadEncryption, type E2ee, type KeyStore } from './helpers/e2ee';
+import { renderRow } from './helpers/settings-row';
 import { openChangePassphrase, openDisableEncryption, openEnableEncryption, openUnlockEncryption } from './helpers/e2ee-ui';
 import { createRestorePointNow, startVaultRestore } from './helpers/history-ui';
 import { HISTORY_MAX_DAYS, HISTORY_MIN_DAYS } from './helpers/history';
@@ -789,14 +790,11 @@ class SettingsTab extends PluginSettingTab {
 			{
 				name: 'Sync now',
 				render: (setting) => {
-					setting.settingEl.empty();
-					setting.setName('Sync now');
-					setting.setDesc(
+					const btns = renderRow(
+						setting,
+						'Sync now',
 						'Pull brings changes from Google Drive to this device. Push sends this device\'s changes to Google Drive. The doctor only checks and changes nothing.',
 					);
-					const btns = setting.settingEl.createDiv({
-						cls: 'setting-item-control',
-					});
 					const pullBtn = btns.createEl('button', { text: 'Pull' });
 					pullBtn.addEventListener('click', () => {
 						if (this.plugin.syncing) return;
@@ -867,14 +865,11 @@ class SettingsTab extends PluginSettingTab {
 			{
 				name: 'Version history',
 				render: (setting) => {
-					setting.settingEl.empty();
-					setting.setName('Version history');
-					setting.setDesc(
+					const btns = renderRow(
+						setting,
+						'Version history',
 						'Restore the whole vault to an earlier restore point, or save a restore point right now. A restore first changes only this device; you review it and then push.',
 					);
-					const btns = setting.settingEl.createDiv({
-						cls: 'setting-item-control',
-					});
 					const restoreBtn = btns.createEl('button', {
 						text: 'Restore...',
 					});
@@ -892,20 +887,20 @@ class SettingsTab extends PluginSettingTab {
 			{
 				name: 'End-to-end encryption',
 				render: (setting) => {
-					setting.settingEl.empty();
-					setting.setName('End-to-end encryption');
-					const on = this.plugin.settings.e2eeEnabled === true;
+										const on = this.plugin.settings.e2eeEnabled === true;
 					const locked = on && !this.plugin.e2ee;
-					setting.setDesc(
+					const description = (
 						!on
 							? 'Off. Turn it on to keep your notes and their names encrypted on Google Drive with a passphrase that only you know. It starts a NEW encrypted vault next to your current one. Do it on your main device first, then on the others.'
 							: locked
 								? 'On, but this device does not have the key. Sync is paused until you enter the passphrase.'
-								: 'On. Notes and their names are encrypted on this device before they reach Google Drive. Google Drive\'s web preview and search cannot read them. If you lose the passphrase, nobody can recover the notes.',
+								: 'On. Notes and their names are encrypted on this device before they reach Google Drive. Google Drive\'s web preview and search cannot read them. If you lose the passphrase, nobody can recover the notes.'
 					);
-					const btns = setting.settingEl.createDiv({
-						cls: 'setting-item-control',
-					});
+					const btns = renderRow(
+						setting,
+						'End-to-end encryption',
+						description,
+					);
 					const refresh = () => this.update();
 					const add = (text: string, run: () => void) =>
 						btns.createEl('button', { text }).addEventListener('click', run);
@@ -981,14 +976,11 @@ class SettingsTab extends PluginSettingTab {
 			{
 				name: 'Diagnostics',
 				render: (setting) => {
-					setting.settingEl.empty();
 					const count = this.plugin.diagnostics.getEntries().length;
-					setting.setName(
+					const btns = renderRow(
+						setting,
 						`Diagnostics (${count} ${count === 1 ? 'entry' : 'entries'})`,
 					);
-					const btns = setting.settingEl.createDiv({
-						cls: 'setting-item-control',
-					});
 					const copyBtn = btns.createEl('button', {
 						text: 'Copy to clipboard',
 					});

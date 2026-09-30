@@ -175,6 +175,7 @@ export const openChangePassphrase = (t: ObsidianGoogleDrive) => {
 		],
 		'Change',
 		async (v) => {
+			if ((v.repeat ?? '') === '') return 'Type the new passphrase a second time in the repeat box.';
 			if ((v.pass ?? '') !== (v.repeat ?? '')) return 'The two new passphrases are different.';
 			try {
 				await changePassphrase(t, v.old ?? '', v.pass ?? '');

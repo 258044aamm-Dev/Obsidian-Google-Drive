@@ -202,6 +202,20 @@ describe('passphrase and key handling', () => {
 		expect(third.tree()).toContain('Inbox/a.md');
 	});
 
+	it('a missing or different second passphrase is refused with a clear message before anything is created', async () => {
+		const { World } = await import('./world');
+		const w = new World(ROOT, '3.6.0');
+		const d = w.device('d');
+		await d.start({ startupPull: false });
+		const { enableEncryption } = await e2eeModule();
+		const before = w.drive.files.size;
+		await expect(enableEncryption(d.plugin, PASS, '')).rejects.toThrow(/second time/i);
+		await expect(enableEncryption(d.plugin, PASS, PASS + 'x')).rejects.toThrow(/different/i);
+		expect(w.drive.files.size).toBe(before);
+		expect(d.plugin.settings.e2eeEnabled).toBe(false);
+		expect(await enableEncryption(d.plugin, PASS, PASS)).toBe('created');
+	});
+
 	it('a weak passphrase is refused before anything is created', async () => {
 		const { World } = await import('./world');
 		const w = new World(ROOT, '3.6.0');

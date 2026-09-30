@@ -210,7 +210,11 @@ export const enableEncryption = async (
 		const quality = checkPassphrase(passphrase);
 		if (!quality.ok) throw new Error(quality.message);
 		if (repeat !== undefined && repeat !== passphrase) {
-			throw new Error('The two passphrases are different. A new encrypted vault needs the same passphrase typed twice.');
+			throw new Error(
+				repeat === ''
+					? 'Type the passphrase a second time in the "Repeat the passphrase" box. A new encrypted vault needs it twice.'
+					: 'The two passphrases are different. A new encrypted vault needs the same passphrase typed twice.',
+			);
 		}
 		({ header, keys } = await createVaultKeys(passphrase));
 		const created = await getDriveAgent(t)

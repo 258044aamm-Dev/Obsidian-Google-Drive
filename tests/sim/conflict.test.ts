@@ -48,7 +48,8 @@ describe.each([true, false])('keep-both conflicts (deleteToTrash=%s)', (trash) =
 
 	it('the copy and the local version both reach Drive and the other device on Push', async () => {
 		const { w, desktop, mobile } = await bothEdit();
-		await mobile.push(); // its silent pull creates the copy, the push uploads note + copy
+		await mobile.pull(); // the user pulls: the copy is created
+		await mobile.push(); // the push uploads note + copy
 		expect(failures()).toEqual([]);
 		expect(mobile.ops()).toEqual({});
 
@@ -138,9 +139,17 @@ describe.each([true, false])('keep-both conflicts (deleteToTrash=%s)', (trash) =
 		expect(read(mobile, `Inbox/a (Drive ${today()}).md`)).toBe('desktop a');
 	});
 
-	it('the copy notice is shown, also during the silent pull inside Push', async () => {
-		const { mobile } = await bothEdit();
+	it('the copy notice is shown on Pull; Push alone does not pull, so it makes no copy and stops', async () => {
+		const { w, mobile } = await bothEdit();
+		const before = w.drive.snapshotNonConfig();
+		const localBefore = read(mobile, 'Inbox/b.md');
 		await mobile.push();
+		expect(notices.some((n) => n.includes('Push stopped'))).toBe(true);
+		expect(copies(mobile.tree())).toEqual([]);
+		expect(read(mobile, 'Inbox/b.md')).toBe(localBefore);
+		expect(w.drive.snapshotNonConfig()).toEqual(before);
+		notices.length = 0;
+		await mobile.pull();
 		expect(notices.some((n) => n.includes('Drive version saved') || n.includes('saved as'))).toBe(true);
 	});
 

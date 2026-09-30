@@ -17,8 +17,22 @@ import {
 import { isOwnPluginPath } from './own-plugin';
 import { addTrashedAsRemoved } from './trash';
 import { sameBytes, saveConflictCopy } from './conflict-copy';
+import {
+	countRemoteChanges,
+	findCollisions,
+	type PullGuard,
+	type RemoteChange,
+} from './push-guard';
 
-export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
+/**
+ * `guard` (used only by Push): look at what changed on Drive but never apply it. `pull`
+ * returns false (and sets `guard.blocked`) when Push has to stop, true when it may go on.
+ */
+export const pull = async (
+	t: ObsidianGoogleDrive,
+	silenceNotices = false,
+	guard?: PullGuard,
+) => {
 	let syncNotice = undefined;
 
 	if (!silenceNotices) {
@@ -176,6 +190,29 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 				}
 				return file;
 			});
+
+		if (guard) {
+			const changed: RemoteChange[] = recentlyModified.map(
+				({ id, properties, mimeType }) => ({
+					path: unSplitPath(properties),
+					previousPath: t.settings.driveIdToPath[id],
+					isFolder: mimeType === folderMimeType,
+				}),
+			);
+			const gone = Object.values(removedPaths).filter(
+				(path): path is string => !!path,
+			);
+			guard.remoteCount = countRemoteChanges(changed, gone);
+			guard.conflicts = findCollisions(
+				changed,
+				gone,
+				Object.keys(t.settings.operations),
+			);
+			guard.blocked =
+				guard.remoteCount > 0 &&
+				(guard.mode === 'any' || guard.conflicts.length > 0);
+			return !guard.blocked;
+		}
 
 		if (!recentlyModified.length && !deletions.length) {
 			if (silenceNotices) return true;

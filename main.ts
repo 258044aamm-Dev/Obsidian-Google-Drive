@@ -426,7 +426,11 @@ export default class ObsidianGoogleDrive extends Plugin {
 		return new Notice(`${operationName}...`, 0);
 	}
 
-	async endSync(syncNotice?: Notice, retainConfigChanges = true) {
+	async endSync(
+		syncNotice?: Notice,
+		retainConfigChanges = true,
+		advanceCursor = true,
+	) {
 		const syncedAt = Date.now();
 		if (retainConfigChanges) {
 			const configFilesToSync = await this.drive.getConfigFilesToSync();
@@ -442,16 +446,19 @@ export default class ObsidianGoogleDrive extends Plugin {
 			);
 		}
 
-		const changesToken = await this.drive.getChangesStartToken();
-		if (!changesToken) {
-			new Notice(
-				'An error occurred fetching Google Drive changes token.',
-			);
-			this.abortSync(syncNotice);
-			return false;
+		if (advanceCursor) {
+			const changesToken = await this.drive.getChangesStartToken();
+			if (!changesToken) {
+				new Notice(
+					'An error occurred fetching Google Drive changes token.',
+				);
+				this.abortSync(syncNotice);
+				return false;
+			}
+			this.settings.lastSyncedAt = syncedAt;
+			this.settings.changesToken = changesToken;
 		}
-		this.settings.lastSyncedAt = syncedAt;
-		this.settings.changesToken = changesToken;
+		// else: Drive has changes this device has not pulled; keep the old position so the next Pull gets them.
 		await this.saveSettings();
 		this.setSpinning(false);
 		this.syncing = false;

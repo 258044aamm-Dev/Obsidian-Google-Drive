@@ -9,6 +9,7 @@ import {
 	unSplitPath,
 } from './drive';
 import { pull } from './pull';
+import { blockedMessage, type PullGuard } from './push-guard';
 import { isOwnPluginPath } from './own-plugin';
 import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
@@ -16,12 +17,12 @@ import { massDeleteWarning } from './push-warning';
 import { recordRestorePointAfterPush } from './history';
 
 export class ConfirmPushModal extends Modal {
-	proceed: (res: boolean) => void;
+	proceed: (res: boolean, withoutPull?: boolean) => void;
 
 	constructor(
 		t: ObsidianGoogleDrive,
 		initialOperations: [string, 'create' | 'delete' | 'modify'][],
-		proceed: (res: boolean) => void,
+		proceed: (res: boolean, withoutPull?: boolean) => void,
 	) {
 		super(t.app);
 		this.proceed = proceed;
@@ -31,6 +32,11 @@ export class ConfirmPushModal extends Modal {
 			.createEl('p')
 			.setText(
 				'Do you want to push the following changes to Google Drive:',
+			);
+		this.contentEl
+			.createEl('p')
+			.setText(
+				'Push does not pull. If Google Drive has newer changes, push stops and asks you to pull first. The button below uploads your changes anyway, unless something changed both on this device and in Google Drive.',
 			);
 		const warning = massDeleteWarning(
 			initialOperations,
@@ -110,6 +116,12 @@ export class ConfirmPushModal extends Modal {
 						proceed(true);
 						this.close();
 					}),
+			)
+			.addButton((btn) =>
+				btn.setButtonText('Push without pulling').onClick(() => {
+					proceed(true, true);
+					this.close();
+				}),
 			);
 	}
 
@@ -273,6 +285,7 @@ export class ConfirmUndoModal extends Modal {
 export const push = async (
 	t: ObsidianGoogleDrive,
 	skipConfirmation = false,
+	withoutPullOption = false,
 ) => {
 	if (t.syncing) return;
 	const initialOperations = Object.entries(t.settings.operations).sort(
@@ -282,10 +295,15 @@ export const push = async (
 	const { vault } = t.app;
 	const adapter = vault.adapter;
 
+	let withoutPull = withoutPullOption;
 	const proceed =
 		skipConfirmation ||
 		(await new Promise<boolean>((resolve) => {
-			new ConfirmPushModal(t, initialOperations, resolve).open();
+			new ConfirmPushModal(t, initialOperations, (ok, skipPull) => {
+				// closing the window reports `false` after a button was pressed: ignore that
+				if (ok) withoutPull = skipPull === true;
+				resolve(ok);
+			}).open();
 		}));
 
 	if (!proceed) return;
@@ -294,8 +312,23 @@ export const push = async (
 
 	let lastPhase: SyncPhase = 'upload';
 
+	// Whether Drive holds changes that this device has NOT pulled (only possible when the
+	// user chose "Push without pulling"). The sync position then must not move forward.
+	let unpulledRemoteChanges = false;
+
 	try {
-		if (!(await pull(t, true))) {
+		// Push never pulls: it only looks at Drive and stops if there is something to pull.
+		const guard: PullGuard = { mode: withoutPull ? 'overlap' : 'any' };
+		if (!(await pull(t, true, guard))) {
+			if (guard.blocked) {
+				t.diagnostics.record({
+					phase: 'upload',
+					operation: 'pre-push-check',
+					message: `Push stopped: ${guard.remoteCount} remote change(s), ${guard.conflicts?.length ?? 0} collision(s), mode ${guard.mode}`,
+				});
+				new Notice(blockedMessage(guard, withoutPull), 12000);
+				return;
+			}
 			t.diagnostics.record({
 				phase: 'upload',
 				operation: 'pre-push-pull',
@@ -307,6 +340,7 @@ export const push = async (
 			);
 			return;
 		}
+		unpulledRemoteChanges = (guard.remoteCount ?? 0) > 0;
 
 		lastPhase = 'root-folder';
 		if (!(await t.diagnostics.withContext('root-folder', 'verify-root-folder', () =>
@@ -608,12 +642,18 @@ export const push = async (
 			await recordRestorePointAfterPush(t);
 		}
 
-		if (!(await t.endSync(syncNotice, false))) return;
+		const ended = unpulledRemoteChanges
+			? await t.endSync(syncNotice, false, false)
+			: await t.endSync(syncNotice, false);
+		if (!ended) return;
 
 		await t.saveLog(t.diagnostics.getEntries());
 		const totalFiles = creates.length + modifies.length;
 		new Notice(
-			`Push complete — ${totalFiles} file${totalFiles === 1 ? '' : 's'} synced.`,
+			`Push complete — ${totalFiles} file${totalFiles === 1 ? '' : 's'} synced.` +
+				(unpulledRemoteChanges
+					? ' Google Drive has newer changes that were not pulled: press Pull next.'
+					: ''),
 		);
 	} catch (error) {
 		t.diagnostics.record({

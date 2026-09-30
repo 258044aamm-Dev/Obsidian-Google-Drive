@@ -74,6 +74,13 @@ export class Device {
 		await push(this.plugin, true);
 		await sleep(5);
 	}
+	/** The "Push without pulling" button of the Push window (fork only). */
+	async pushWithoutPull() {
+		const { push } = await import(this.root ? this.root + '/helpers/push.ts' : this.world.pushPath);
+		notices.length = 0;
+		await push(this.plugin, true, true);
+		await sleep(5);
+	}
 	async save() {
 		await this.plugin.saveSettings();
 	}

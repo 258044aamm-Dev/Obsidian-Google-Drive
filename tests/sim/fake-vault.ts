@@ -89,6 +89,7 @@ export class FakeVault {
 		return {};
 	}
 	emit(evt: string, ...a: any[]) {
+		if (a[0] === undefined) return; // files in the config folder are not indexed, so Obsidian raises no event for them
 		(this.handlers[evt] || []).forEach((h) => h(...a));
 	}
 

@@ -21,6 +21,9 @@ import { HISTORY_MAX_DAYS, HISTORY_MIN_DAYS } from './helpers/history';
 import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
 import type { DiagnosticEntry, SyncPhase } from './helpers/diagnostics';
 
+const isInConfigDir = (configDir: string, path: string) =>
+	path === configDir || path.startsWith(configDir + '/');
+
 interface PluginSettings {
 	refreshToken: string;
 	clientId: string;
@@ -81,6 +84,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 	/** Create / modify / delete / rename events seen since load (shown by the Sync doctor). */
 	vaultEventCount = 0;
 	private statusBar?: StatusBar;
+	/** Config-folder files that this sync downloaded from Drive (so they must not count as changed on this device). */
+	private pulledConfigPaths?: Set<string>;
 
 	async onload() {
 		const { vault } = this.app;
@@ -421,6 +426,9 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.app.vault.adapter.writeBinary(file, content, {
 			mtime: modificationDate,
 		});
+		if (isInConfigDir(this.app.vault.configDir, file)) {
+			(this.pulledConfigPaths ||= new Set()).add(file);
+		}
 		if (oldOperation) this.settings.operations[file] = oldOperation;
 		else delete this.settings.operations[file];
 	}
@@ -442,6 +450,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		this.clearAutoPushTimer();
 		this.setSpinning(true);
 		this.syncing = true;
+		this.pulledConfigPaths = undefined;
 		return new Notice(`${operationName}...`, 0);
 	}
 
@@ -452,7 +461,13 @@ export default class ObsidianGoogleDrive extends Plugin {
 	) {
 		const syncedAt = Date.now();
 		if (retainConfigChanges) {
-			const configFilesToSync = await this.drive.getConfigFilesToSync();
+			// Keep the config files that were changed on this device marked as changed after the
+			// sync point moves on. Files this sync just downloaded are not local changes: marking
+			// them would upload them again on the next Push (and bounce between devices).
+			const pulled = this.pulledConfigPaths ?? new Set<string>();
+			const configFilesToSync = (
+				await this.drive.getConfigFilesToSync()
+			).filter((file) => !pulled.has(file));
 
 			await Promise.all(
 				configFilesToSync.map(async (file) =>
@@ -478,6 +493,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 			this.settings.changesToken = changesToken;
 		}
 		// else: Drive has changes this device has not pulled; keep the old position so the next Pull gets them.
+		this.pulledConfigPaths = undefined;
 		await this.saveSettings();
 		this.setSpinning(false);
 		this.syncing = false;

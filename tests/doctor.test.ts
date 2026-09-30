@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDoctorReport, renderReport } from '../helpers/doctor';
+import { buildDoctorReport, clockSkewMs, renderReport } from '../helpers/doctor';
 import type { DoctorInput } from '../helpers/doctor';
 
 const base = (over: Partial<DoctorInput> = {}): DoctorInput => ({
@@ -80,3 +80,58 @@ describe('buildDoctorReport', () => {
 		expect(text).toContain('Refresh token: present');
 	});
 });
+
+describe('doctor environment checks', () => {
+	const warn = (env: NonNullable<DoctorInput['environment']>) =>
+		buildDoctorReport(base({ environment: env })).verdict.join('\n');
+
+	it('adds nothing when no environment facts are given', () => {
+		const report = buildDoctorReport(base());
+		expect(report.environmentLines).toEqual([]);
+		expect(renderReport(report)).not.toContain('Clock check');
+	});
+
+	it('warns when Obsidian deletes files permanently, not for the trash options', () => {
+		expect(warn({ obsidianTrashOption: 'none' })).toContain('Permanently delete');
+		expect(warn({ obsidianTrashOption: 'local' })).not.toContain('Permanently');
+		expect(warn({ obsidianTrashOption: 'system' })).not.toContain('Permanently');
+		expect(warn({})).not.toContain('Permanently');
+	});
+
+	it('reports the Drive deletion mode', () => {
+		const text = (deleteToTrash: boolean) =>
+			renderReport(buildDoctorReport(base({ environment: { deleteToTrash } })));
+		expect(text(true)).toContain('moved to the Drive Trash');
+		expect(text(false)).toContain('Drive deletions: permanent');
+	});
+
+	it('flags a clock more than a minute off, in both directions', () => {
+		expect(warn({ clockSkewMs: 5 * 60_000 })).toContain('5 minutes ahead of');
+		expect(warn({ clockSkewMs: -90_000 })).toContain('90 seconds behind');
+		expect(warn({ clockSkewMs: 61_000 })).toContain("clock is about");
+	});
+
+	it('accepts a clock within a minute and a failed measurement', () => {
+		const ok = buildDoctorReport(base({ environment: { clockSkewMs: 60_000 } }));
+		expect(ok.verdict).not.toContain('clock');
+		expect(ok.environmentLines.join()).toContain('agrees with Google');
+		const unknown = buildDoctorReport(base({ environment: { clockSkewMs: null } }));
+		expect(unknown.environmentLines.join()).toContain('could not be measured');
+	});
+});
+
+describe('clockSkewMs', () => {
+	const date = 'Wed, 30 Sep 2026 12:00:00 GMT';
+	const server = Date.parse(date);
+	it('uses the middle of the request as the device time', () => {
+		expect(clockSkewMs(server - 500, server + 500, date)).toBe(0);
+		expect(clockSkewMs(server + 299_000, server + 301_000, date)).toBe(300_000);
+		expect(clockSkewMs(server - 301_000, server - 299_000, date)).toBe(-300_000);
+	});
+	it('returns null without a usable Date header', () => {
+		expect(clockSkewMs(1, 2, undefined)).toBeNull();
+		expect(clockSkewMs(1, 2, '')).toBeNull();
+		expect(clockSkewMs(1, 2, 'not a date')).toBeNull();
+	});
+});
+

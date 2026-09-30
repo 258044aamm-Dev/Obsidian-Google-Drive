@@ -1,8 +1,8 @@
 import { Modal, Notice, TFile, TFolder } from 'obsidian';
 import type ObsidianGoogleDrive from '../main';
 import { unSplitPath, folderMimeType } from './drive';
-import { refreshAccessToken } from './requests';
-import { buildDoctorReport, renderReport } from './doctor';
+import { getDriveAgent, refreshAccessToken } from './requests';
+import { buildDoctorReport, clockSkewMs, renderReport } from './doctor';
 import { isOwnPluginPath } from './own-plugin';
 
 class DoctorModal extends Modal {
@@ -38,6 +38,20 @@ class DoctorModal extends Modal {
 	}
 }
 
+/** One small GET: compares this device's clock with the `Date` header Google answers with. Never throws. */
+const measureClockSkew = async (t: ObsidianGoogleDrive): Promise<number | null> => {
+	try {
+		const sentAt = Date.now();
+		const response = await getDriveAgent(t).get('/drive/v3/changes/startPageToken');
+		const receivedAt = Date.now();
+		const headers = response.headers ?? {};
+		const key = Object.keys(headers).find((k) => k.toLowerCase() === 'date');
+		return clockSkewMs(sentAt, receivedAt, key ? headers[key] : undefined);
+	} catch {
+		return null;
+	}
+};
+
 /** Compares this device with Google Drive using GET requests only, then shows the result. */
 export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 	if (t.syncing) {
@@ -60,6 +74,7 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 			return;
 		}
 		const { vault } = t.app;
+		const clockSkew = await measureClockSkew(t);
 		const localPaths = vault
 			.getAllLoadedFiles()
 			.filter((f) => f instanceof TFile || f instanceof TFolder)
@@ -85,6 +100,13 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 					path: unSplitPath(properties),
 					isFolder: mimeType === folderMimeType,
 				})),
+			environment: {
+				deleteToTrash: t.settings.deleteToTrash === true,
+				obsidianTrashOption: (
+					vault as unknown as { getConfig?: (key: string) => unknown }
+				).getConfig?.('trashOption') as string | undefined,
+				clockSkewMs: clockSkew,
+			},
 		});
 		new DoctorModal(t, renderReport(report)).open();
 	} catch (error) {

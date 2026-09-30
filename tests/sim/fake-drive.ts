@@ -33,6 +33,8 @@ export class FakeDrive {
 	trashEmitsRemoved = false;
 	/** make the "which files are in the Trash" listing fail (Pull must carry on without it) */
 	failTrashedList = false;
+	/** how far the server clock runs ahead of the test clock; sent as the HTTP Date header of startPageToken */
+	serverClockOffsetMs = 0;
 	constructor(vaultName: string) {
 		this.vaultName = vaultName;
 		this.rootId = this.add({
@@ -162,7 +164,10 @@ export class FakeDrive {
 		if (url.hostname === 'www.google.com') return { status: this.offline ? 503 : 204, text: '', json: {} };
 
 		if (method === 'GET' && path === '/drive/v3/changes/startPageToken') {
-			return ok({ startPageToken: String(this.changes.length + 1) });
+			return {
+				...ok({ startPageToken: String(this.changes.length + 1) }),
+				headers: { date: new Date(Date.now() + this.serverClockOffsetMs).toUTCString() },
+			};
 		}
 		if (method === 'GET' && path === '/drive/v3/changes') {
 			const from = Number(url.searchParams.get('pageToken'));

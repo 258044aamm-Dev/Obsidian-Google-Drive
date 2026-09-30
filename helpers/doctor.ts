@@ -27,7 +27,42 @@ export interface DoctorInput {
 	localPaths: string[];
 	/** Every entry on Drive that belongs to the vault (config files excluded). */
 	drive: DoctorDriveEntry[];
+	/** Optional extra facts. When left out the report is exactly as before. */
+	environment?: DoctorEnvironment;
 }
+
+export interface DoctorEnvironment {
+	/** This plugin's "Drive deletions go to the Trash" setting. */
+	deleteToTrash?: boolean;
+	/** Obsidian's "Deleted files" option: 'system', 'local' (.trash) or 'none' (permanently delete). */
+	obsidianTrashOption?: string;
+	/** This device's clock minus Google's clock in milliseconds, or null when it could not be measured. */
+	clockSkewMs?: number | null;
+}
+
+/** A clock that differs from Google's by more than this is reported. */
+export const CLOCK_SKEW_LIMIT_MS = 60_000;
+
+/**
+ * Device clock minus server clock. `sentAt` and `receivedAt` are device times around the request, and
+ * `serverDate` is the HTTP `Date` header (whole seconds). Returns null if the header is missing or invalid.
+ */
+export const clockSkewMs = (
+	sentAt: number,
+	receivedAt: number,
+	serverDate: string | undefined,
+): number | null => {
+	if (!serverDate) return null;
+	const server = Date.parse(serverDate);
+	if (!Number.isFinite(server)) return null;
+	return Math.round((sentAt + receivedAt) / 2 - server);
+};
+
+const describeSkew = (ms: number) => {
+	const seconds = Math.round(Math.abs(ms) / 1000);
+	const amount = seconds >= 120 ? `${Math.round(seconds / 60)} minutes` : `${seconds} seconds`;
+	return `${amount} ${ms > 0 ? 'ahead of' : 'behind'}`;
+};
 
 export interface DoctorReport {
 	pluginVersion: string;
@@ -50,6 +85,8 @@ export interface DoctorReport {
 	/** Ids in the saved map that no longer exist on Drive. */
 	staleMapIds: { id: string; path: string }[];
 	verdict: string[];
+	/** Optional lines describing the environment; empty when no environment facts were given. */
+	environmentLines: string[];
 }
 
 export const buildDoctorReport = (input: DoctorInput): DoctorReport => {
@@ -128,6 +165,32 @@ export const buildDoctorReport = (input: DoctorInput): DoctorReport => {
 		verdict.push('Auto-push is ON (sync is not manual-only on this device).');
 	}
 
+	const environmentLines: string[] = [];
+	const env = input.environment;
+	if (env?.deleteToTrash !== undefined) {
+		environmentLines.push(
+			env.deleteToTrash
+				? 'Drive deletions: moved to the Drive Trash (every device that syncs this vault must run this plugin version, otherwise it will not see those deletions).'
+				: 'Drive deletions: permanent (Trash mode is off).',
+		);
+	}
+	if (env?.obsidianTrashOption === 'none') {
+		verdict.push(
+			"Obsidian's \"Deleted files\" option is \"Permanently delete\": a Pull that removes files here cannot be undone. Consider \"Move to Obsidian trash\" (Settings > Files and links).",
+		);
+	}
+	if (env && env.clockSkewMs !== undefined) {
+		if (env.clockSkewMs === null) {
+			environmentLines.push('Clock check: could not be measured.');
+		} else if (Math.abs(env.clockSkewMs) > CLOCK_SKEW_LIMIT_MS) {
+			verdict.push(
+				`This device's clock is about ${describeSkew(env.clockSkewMs)} Google's. Turn on automatic date and time. A wrong clock can make Pull miss changes or create extra "(Drive date)" copies.`,
+			);
+		} else {
+			environmentLines.push('Clock check: this device agrees with Google (within a minute).');
+		}
+	}
+
 	return {
 		pluginVersion: input.pluginVersion,
 		lastSyncedAt: settings.lastSyncedAt
@@ -152,6 +215,7 @@ export const buildDoctorReport = (input: DoctorInput): DoctorReport => {
 		duplicateDrivePaths,
 		staleMapIds,
 		verdict,
+		environmentLines,
 	};
 };
 
@@ -173,6 +237,7 @@ export const renderReport = (report: DoctorReport): string => {
 		`Last synced: ${report.lastSyncedAt}`,
 		`Refresh token: ${report.hasRefreshToken ? 'present' : 'MISSING'}; changes token: ${report.hasChangesToken ? 'present' : 'missing'}`,
 		`Startup pull: ${report.startupPull ? 'on' : 'off'}; auto-push: ${report.autoPush ? 'on' : 'off'}`,
+		...report.environmentLines,
 		`Paths on this device: ${report.counts.local}; on Drive: ${report.counts.drive}; ids in saved map: ${report.counts.mappedIds}`,
 		`Pending operations: create ${report.operationCounts.create}, modify ${report.operationCounts.modify}, delete ${report.operationCounts.delete}`,
 		'',

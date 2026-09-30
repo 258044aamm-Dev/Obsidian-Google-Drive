@@ -217,6 +217,21 @@ describe.each([true, false])('sync regression (two devices, fake Drive), deleteT
 			expect(report).toContain('Run Pull to remove them here');
 			expect(report).not.toContain('refreshToken');
 		});
+
+		it('measures the clock against Drive (GET only) and warns about a device that is off', async () => {
+			const { w, mobile } = await setup();
+			const run = async () => {
+				modalTexts.length = 0;
+				const calls = netLog.length;
+				await runSyncDoctor(mobile.plugin);
+				expect(netLog.slice(calls).filter((l) => !l.startsWith('GET '))).toEqual([]);
+				return modalTexts.join('\n');
+			};
+			expect(await run()).toContain('Clock check: this device agrees with Google');
+			w.drive.serverClockOffsetMs = -10 * 60_000; // Google is 10 minutes behind this device
+			expect(await run()).toMatch(/clock is about 10 minutes ahead of Google/);
+			w.drive.serverClockOffsetMs = 0;
+		});
 	});
 
 	describe('Drive reports a deleted folder but not its descendants', () => {

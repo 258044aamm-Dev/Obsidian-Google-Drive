@@ -12,7 +12,10 @@ vi.mock('obsidian', () => {
 });
 
 import { TFile, TFolder } from 'obsidian';
-import { partitionFolderDeletions } from '../helpers/folder-deletion';
+import {
+	findImpliedDescendants,
+	partitionFolderDeletions,
+} from '../helpers/folder-deletion';
 
 const file = (path: string) => Object.assign(new TFile(), { path });
 const folder = (path: string, children: (TFile | TFolder)[] = []) =>
@@ -60,5 +63,30 @@ describe('partitionFolderDeletions', () => {
 		const outer = folder('F', [inner]);
 		const r = partitionFolderDeletions([outer], new Set());
 		expect(r.keep).toEqual([outer]);
+	});
+});
+
+describe('findImpliedDescendants', () => {
+	it('classifies synced-unchanged descendants as gone and edited files as edited, recursively', () => {
+		const inner = folder('F/G', [file('F/G/x.md'), file('F/G/edited.md')]);
+		const outer = folder('F', [inner, file('F/a.md'), file('F/local-only.md')]);
+		const state: Record<string, 'gone' | 'edited'> = {
+			'F/G': 'gone',
+			'F/G/x.md': 'gone',
+			'F/G/edited.md': 'edited',
+			'F/a.md': 'gone',
+		};
+		const r = findImpliedDescendants([outer], (p) => state[p] ?? 'unknown');
+		expect(r.files.map((f) => f.path).sort()).toEqual(['F/G/x.md', 'F/a.md']);
+		expect(r.folders.map((f) => f.path)).toEqual(['F/G']);
+		expect(r.edited.map((f) => f.path)).toEqual(['F/G/edited.md']);
+	});
+
+	it('does not descend into a subfolder that is not known to be synced', () => {
+		const inner = folder('F/G', [file('F/G/x.md')]);
+		const outer = folder('F', [inner]);
+		const r = findImpliedDescendants([outer], (p) => (p === 'F/G/x.md' ? 'gone' : 'unknown'));
+		expect(r.files).toEqual([]);
+		expect(r.folders).toEqual([]);
 	});
 });

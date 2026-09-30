@@ -267,3 +267,36 @@ describe('checkAndMigrate', () => {
 		});
 	});
 });
+
+describe('ensureMigrated', () => {
+	it('runs the migration check once per session', async () => {
+		const plugin = createPlugin();
+		plugin.settings.lastInstalledVersion = '3.0.0';
+		const spy = vi.spyOn(plugin, 'checkAndMigrate');
+		await plugin.ensureMigrated();
+		await plugin.ensureMigrated();
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it('never lets a migration failure block a sync', async () => {
+		const plugin = createPlugin();
+		vi.spyOn(plugin, 'checkAndMigrate').mockRejectedValue(new Error('boom'));
+		await expect(plugin.ensureMigrated()).resolves.toBeUndefined();
+		expect(plugin.diagnostics.record).toHaveBeenCalled();
+	});
+});
+
+describe('setSpinning', () => {
+	it('spins the push icon and the pull icon together, and works without a pull icon', () => {
+		const plugin = createPlugin();
+		const pull = { addClass: vi.fn(), removeClass: vi.fn() };
+		plugin.setSpinning(true);
+		expect(plugin.ribbonIcon.addClass).toHaveBeenCalledWith('spin');
+		plugin.pullRibbonIcon = pull as never;
+		plugin.setSpinning(true);
+		plugin.setSpinning(false);
+		expect(pull.addClass).toHaveBeenCalledWith('spin');
+		expect(pull.removeClass).toHaveBeenCalledWith('spin');
+		expect(plugin.ribbonIcon.removeClass).toHaveBeenCalledWith('spin');
+	});
+});

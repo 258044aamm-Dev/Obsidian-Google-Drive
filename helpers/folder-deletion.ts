@@ -42,3 +42,45 @@ export const partitionFolderDeletions = (
 	);
 	return { remove, keep };
 };
+
+export type DescendantState =
+	/** Synced, unchanged here and on Drive, no pending local operation: safe to treat as removed. */
+	| 'gone'
+	/** Synced, but with a pending local edit: the Drive copy is gone, keep the local file and re-upload it. */
+	| 'edited'
+	/** Not known to be synced (or changed on Drive): leave alone. */
+	| 'unknown';
+
+/**
+ * Drive deletes a folder together with everything inside it, but the changes feed is not
+ * guaranteed to list every descendant. Classifies the local descendants of folders that
+ * Drive removed (see `DescendantState`). Only `gone` items may be deleted; `edited` files
+ * are kept; everything else is left alone.
+ */
+export const findImpliedDescendants = (
+	removedFolders: TFolder[],
+	classify: (path: string, isFolder: boolean) => DescendantState,
+) => {
+	const files = new Map<string, TFile>();
+	const folders = new Map<string, TFolder>();
+	const edited = new Map<string, TFile>();
+	const walk = (folder: TFolder) => {
+		folder.children.forEach((child) => {
+			if (child instanceof TFile) {
+				const state = classify(child.path, false);
+				if (state === 'gone') files.set(child.path, child);
+				else if (state === 'edited') edited.set(child.path, child);
+			} else if (child instanceof TFolder) {
+				if (classify(child.path, true) !== 'gone') return;
+				folders.set(child.path, child);
+				walk(child);
+			}
+		});
+	};
+	removedFolders.forEach(walk);
+	return {
+		files: [...files.values()],
+		folders: [...folders.values()],
+		edited: [...edited.values()],
+	};
+};

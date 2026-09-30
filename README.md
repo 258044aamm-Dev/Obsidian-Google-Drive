@@ -18,7 +18,8 @@ This fork is **manual by default**. Nothing is pulled or pushed unless you ask f
 Fixes in 3.2.0 compared with 3.1.x:
 
 - Folders deleted or moved on another device are now removed on a Pull. Before, empty "ghost" folders stayed behind and the next Push put them back on Drive.
-- A folder that still holds local-only notes is never deleted by a Pull; those notes are kept and uploaded on the next Push.
+- A folder that still holds local-only notes is never deleted by a Pull; those notes are kept and uploaded on the next Push. Notes you edited on this device inside a folder that was deleted on Drive are kept too and uploaded again.
+- A folder deleted on Drive is removed together with its unedited, already-synced contents, even if Drive only reports the folder itself.
 - If a Pull is interrupted, the next Pull still knows which local files Drive had deleted, so they are not uploaded again.
 - The plugin's own folder (`main.js`, `manifest.json`, `data.json`) is never synced. `data.json` holds your tokens and pending operations, and overwriting it or deleting it from another device could break sync.
 - The one-time path migration only adds information; it no longer replaces the saved id map.

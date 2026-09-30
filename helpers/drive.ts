@@ -566,25 +566,25 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 					plugins.folders
 						.filter((plugin) => !isOwnPluginPath(t, plugin))
 						.map(async (plugin) => {
-						const files = await adapter.list(plugin);
-						await Promise.all(
-							files.files
-								.filter((path) =>
-									WHITELISTED_PLUGIN_FILES.includes(
-										fileNameFromPath(path),
-									),
-								)
-								.map(async (path) => {
-									const file = await adapter.stat(path);
-									if (
-										(file?.mtime || 0) >
-										t.settings.lastSyncedAt
-									) {
-										configFilesToSync.push(path);
-									}
-								}),
-						);
-					}),
+							const files = await adapter.list(plugin);
+							await Promise.all(
+								files.files
+									.filter((path) =>
+										WHITELISTED_PLUGIN_FILES.includes(
+											fileNameFromPath(path),
+										),
+									)
+									.map(async (path) => {
+										const file = await adapter.stat(path);
+										if (
+											(file?.mtime || 0) >
+											t.settings.lastSyncedAt
+										) {
+											configFilesToSync.push(path);
+										}
+									}),
+							);
+						}),
 				),
 		);
 

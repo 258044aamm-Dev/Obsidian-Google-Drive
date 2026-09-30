@@ -12,7 +12,6 @@ import {
 	type SettingDefinitionItem,
 	TAbstractFile,
 	TFile,
-	TFolder,
 } from 'obsidian';
 import { fixDrivePath } from './helpers/fix_drive_path';
 import { runSyncDoctor } from './helpers/doctor-command';
@@ -389,20 +388,6 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.app.fileManager.trashFile(file);
 		delete this.settings.operations[file.path];
 		if (!oldOperation) delete this.settings.operations[file.path];
-		if (file instanceof TFolder) {
-			// Trashing a folder makes Obsidian emit a delete event for every descendant, which
-			// would leave a pending "delete" for each of them after a pull that is only
-			// mirroring a deletion that already happened on Drive.
-			const prefix = file.path + '/';
-			Object.keys(this.settings.operations).forEach((path) => {
-				if (
-					path.startsWith(prefix) &&
-					this.settings.operations[path] === 'delete'
-				) {
-					delete this.settings.operations[path];
-				}
-			});
-		}
 	}
 
 	async startSync(operationName = 'Syncing') {

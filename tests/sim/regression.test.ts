@@ -214,6 +214,71 @@ describe('sync regression (two devices, fake Drive)', () => {
 		});
 	});
 
+	describe('Drive reports a deleted folder but not its descendants', () => {
+		it('removes the synced descendants, keeps edited / local-only ones, and does not resurrect anything', async () => {
+			const { w, desktop, mobile } = await setup({ eventsForChildren: false });
+			w.drive.omitDescendantRemovals = true;
+			// phone-side state: one untouched synced file, one local-only note, one edited note inside Projects/Alpha
+			await mobile.vault.create('Projects/Alpha/phone-only.md', 'mine');
+			await mobile.vault.modify(mobile.vault.getFileByPath('Projects/Alpha/plan.md') as TFile, 'edited on phone');
+			const v = desktop.vault;
+			await v.delete(v.getAbstractFileByPath('Projects/Alpha')!);
+			await v.delete(v.getAbstractFileByPath('Archive')!);
+			await sleep(20);
+			await desktop.push();
+			await mobile.pull();
+			const t = mobile.tree();
+			// fully synced & untouched subtree is gone (no ghost folder)
+			expect(t).not.toContain('Archive/');
+			expect(t).not.toContain('Archive/old.md');
+			// untouched descendant of a deleted folder is gone ...
+			expect(t).not.toContain('Projects/Alpha/notes/n1.md');
+			expect(t).not.toContain('Projects/Alpha/notes/');
+			// ... but the edited and local-only notes survive, with their folder
+			expect(t).toContain('Projects/Alpha/plan.md');
+			expect(t).toContain('Projects/Alpha/phone-only.md');
+			await mobile.push();
+			// the push must complete (no PATCH to the dead id) and upload both preserved notes
+			expect(mobile.ops()).toEqual({});
+			expect(w.drive.snapshotNonConfig()).toContain('Projects/Alpha/phone-only.md');
+			expect(w.drive.snapshotNonConfig()).not.toContain('Archive/');
+			expect(w.drive.snapshotNonConfig()).not.toContain('Archive/old.md');
+			const plan = [...w.drive.files.values()].find((f) => f.properties.path === 'Projects/Alpha/plan.md');
+			expect(dec(plan!.content!)).toBe('edited on phone');
+			expect(same(mobile.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
+		});
+
+		it('a local-only note deep inside a deleted tree is preserved and can be pushed (no dead parent ids)', async () => {
+			const { w, desktop, mobile } = await setup({ eventsForChildren: false });
+			w.drive.omitDescendantRemovals = true;
+			await mobile.vault.create('Projects/Alpha/notes/deep-local.md', 'keep me');
+			const v = desktop.vault;
+			await v.delete(v.getAbstractFileByPath('Projects/Alpha')!);
+			await sleep(20);
+			await desktop.push();
+			await mobile.pull();
+			expect(mobile.tree()).toContain('Projects/Alpha/notes/deep-local.md');
+			expect(mobile.tree()).not.toContain('Projects/Alpha/notes/n1.md');
+			expect(mobile.tree()).not.toContain('Projects/Alpha/plan.md');
+			await mobile.push();
+			expect(mobile.ops()).toEqual({});
+			expect(same(mobile.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
+			await desktop.pull();
+			expect(desktop.tree()).toContain('Projects/Alpha/notes/deep-local.md');
+		});
+
+		it('plain folder cleanup converges exactly like the listed case', async () => {
+			const { w, desktop, mobile } = await setup({ eventsForChildren: false });
+			w.drive.omitDescendantRemovals = true;
+			await desktopCleanup(desktop);
+			await mobile.pull();
+			expect(same(desktop.tree(), mobile.tree())).toBe('IDENTICAL');
+			expect(mobile.ops()).toEqual({});
+			await mobile.push();
+			expect(same(desktop.tree(), w.drive.snapshotNonConfig())).toBe('IDENTICAL');
+		});
+	});
+
 	// ---- known limitations of the legacy design, fixed by the state-based engine (P2-P6) ----
 	it.fails('S4 phone clock ahead by 60s still receives a file pushed by the desktop', async () => {
 		const { desktop, mobile } = await setup();

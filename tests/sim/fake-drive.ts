@@ -27,6 +27,8 @@ export class FakeDrive {
 	/** real Drive may answer 404 for a child whose parent folder was deleted earlier in the same batch; unknown, so default lenient */
 	strictBatch = false;
 	gone = new Set<string>();
+	/** if true, deleting a folder reports only the folder itself in the changes feed (descendants vanish silently) */
+	omitDescendantRemovals = false;
 	constructor(vaultName: string) {
 		this.vaultName = vaultName;
 		this.rootId = this.add({
@@ -56,13 +58,13 @@ export class FakeDrive {
 		this.changes.push({ seq: this.changes.length + 1, fileId: id, removed: false });
 		return id;
 	}
-	remove(id: string) {
+	remove(id: string, report = true) {
 		const f = this.files.get(id);
 		if (!f) return false;
-		if (f.mimeType === FOLDER) for (const c of [...this.files.values()]) if (c.parents.includes(id)) this.remove(c.id);
+		if (f.mimeType === FOLDER) for (const c of [...this.files.values()]) if (c.parents.includes(id)) this.remove(c.id, report && !this.omitDescendantRemovals);
 		this.files.delete(id);
 		this.gone.add(id);
-		this.changes.push({ seq: this.changes.length + 1, fileId: id, removed: true });
+		if (report) this.changes.push({ seq: this.changes.length + 1, fileId: id, removed: true });
 		return true;
 	}
 	/** what the user sees in Drive: path -> (folder | size) */

@@ -10,7 +10,10 @@ import {
 import { refreshAccessToken } from './requests';
 import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
-import { partitionFolderDeletions } from './folder-deletion';
+import {
+	findImpliedDescendants,
+	partitionFolderDeletions,
+} from './folder-deletion';
 import { isOwnPluginPath } from './own-plugin';
 
 export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
@@ -204,8 +207,12 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 
 		updateMap();
 
+		// Ids of local files/folders that are removed only because an ancestor folder was
+		// removed on Drive (the feed may not list them). Forgotten once the deletion worked.
+		const impliedIds = new Set<string>();
+
 		const deleteFiles = async () => {
-			const deletedFiles = deletions
+			const explicitFiles = deletions
 				.filter((file) => file instanceof TFile)
 				.filter((file: TFile) => {
 					if (t.settings.operations[file.path] === 'modify') {
@@ -217,15 +224,53 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 					return true;
 				});
 
+			const removedFolders = deletions
+				.filter((folder) => folder instanceof TFolder)
+				.filter((folder) => !pathToId[folder.path]);
+
+			const modifiedOnDrive = new Set(recentlyModified.map(({ id }) => id));
+			const implied = findImpliedDescendants(
+				removedFolders,
+				(path, isFolder) => {
+					const id = pathToId[path];
+					if (!id || modifiedOnDrive.has(id)) return 'unknown';
+					const operation = t.settings.operations[path];
+					if (!operation) return 'gone';
+					// A locally edited file whose Drive copy is gone: keep it, upload it again.
+					return !isFolder && operation === 'modify' ? 'edited' : 'unknown';
+				},
+			);
+
+			implied.edited.forEach(({ path }) => {
+				t.settings.operations[path] = 'create';
+				const id = pathToId[path];
+				if (id) impliedIds.add(id);
+			});
+
+			const explicitPaths = new Set(explicitFiles.map(({ path }) => path));
+			const deletedFiles = [
+				...explicitFiles,
+				...implied.files.filter(({ path }) => !explicitPaths.has(path)),
+			];
 			const deletedFilePaths = new Set(deletedFiles.map(({ path }) => path));
 
 			const { remove: deletedFolders, keep: keptFolders } =
 				partitionFolderDeletions(
-					deletions
-						.filter((folder) => folder instanceof TFolder)
-						.filter((folder) => !pathToId[folder.path]),
+					[
+						...new Map(
+							[...removedFolders, ...implied.folders].map((f) => [
+								f.path,
+								f,
+							]),
+						).values(),
+					],
 					deletedFilePaths,
 				);
+
+			[...implied.files, ...deletedFolders].forEach(({ path }) => {
+				const id = pathToId[path];
+				if (id && !removedIds.has(id)) impliedIds.add(id);
+			});
 
 			// Folders that still hold local content must not be deleted (nor left behind
 			// as silent ghosts): treat them as new local folders.
@@ -237,6 +282,20 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 				...deletedFolders,
 				...deletedFiles,
 			]);
+
+			// Obsidian emits a delete event for every descendant of a trashed folder; those
+			// events are just this pull mirroring Drive, not pending local deletions.
+			deletedFolders.forEach(({ path }) => {
+				const prefix = path + '/';
+				Object.keys(t.settings.operations).forEach((opPath) => {
+					if (
+						opPath.startsWith(prefix) &&
+						t.settings.operations[opPath] === 'delete'
+					) {
+						delete t.settings.operations[opPath];
+					}
+				});
+			});
 		};
 
 		await t.diagnostics.withContext('delete', 'delete-local-files', async () => {
@@ -246,6 +305,7 @@ export const pull = async (t: ObsidianGoogleDrive, silenceNotices = false) => {
 
 		// The deletions are applied: now it is safe to forget the removed ids.
 		removedIds.forEach((id) => delete t.settings.driveIdToPath[id]);
+		impliedIds.forEach((id) => delete t.settings.driveIdToPath[id]);
 
 		syncNotice?.setMessage(
 			`Pulling... ${deletions.filter(Boolean).length} files removed`,

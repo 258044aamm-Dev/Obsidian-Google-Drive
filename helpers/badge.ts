@@ -8,7 +8,7 @@
  */
 import type ObsidianGoogleDrive from '../main';
 import { folderMimeType, unSplitPath } from './drive';
-import { isConfigPathSynced } from './config-scope';
+import { isSyncedPath } from './ignore';
 import { isOwnPluginPath } from './own-plugin';
 import { countRemoteChanges, type RemoteChange } from './push-guard';
 import { isOwnUpload } from './sync-state';
@@ -78,7 +78,7 @@ export const countWaitingOnDrive = async (
 		await addTrashedAsRemoved(t, changes);
 
 		const synced = (path: string) =>
-			!!path && !isOwnPluginPath(t, path) && isConfigPathSynced(t, path);
+			!!path && !isOwnPluginPath(t, path) && isSyncedPath(t, path);
 		const changed: RemoteChange[] = listed
 			.filter(({ id, modifiedTime, mimeType }) => mimeType !== folderMimeType && !isOwnUpload(t, id, modifiedTime))
 			.map(({ id, properties }) => ({

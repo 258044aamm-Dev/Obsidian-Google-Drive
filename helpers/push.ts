@@ -17,7 +17,7 @@ import { massDeleteWarning } from './push-warning';
 import { recordRestorePointAfterPush } from './history';
 import { recordMissedEdits } from './missed-edits';
 import { hashOf, recordSynced, recordSyncedFromDisk, stampOf } from './sync-state';
-import { isConfigPathSynced } from './config-scope';
+import { dropIgnoredMarks, isSyncedPath } from './ignore';
 import { connectionHint } from './net-retry';
 import { verifySummary, verifyUploads } from './push-verify';
 import type { UploadedItem } from './push-verify';
@@ -303,6 +303,7 @@ export const push = async (
 	if (t.syncing) return;
 	// Safety net: an edited note whose event was missed would otherwise be skipped.
 	await recordMissedEdits(t);
+	dropIgnoredMarks(t);
 	const initialOperations = Object.entries(t.settings.operations).sort(
 		([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
 	); // Alphabetical
@@ -418,7 +419,7 @@ export const push = async (
 				// Config files of this plugin itself are not managed by sync.
 				if (isOwnPluginPath(t, path)) return;
 				// A kind of settings file that is switched off is left alone on Drive.
-				if (!isConfigPathSynced(t, path)) return;
+				if (!isSyncedPath(t, path)) return;
 				if (!(await adapter.exists(path))) {
 					// Missing here is only a deletion if this device HAD the file (it pulled or
 					// pushed it before). A device that never had it (a phone that has not pulled

@@ -28,6 +28,7 @@ import {
 } from './crypto';
 import { getDriveAgent, refreshAccessToken } from './requests';
 import { isOwnPluginPath } from './own-plugin';
+import { isIgnored } from './ignore';
 import { clearSyncState } from './sync-state';
 
 export { E2eeError } from './crypto';
@@ -169,7 +170,7 @@ const localItemsToCreate = (t: ObsidianGoogleDrive) => {
 	const ops: Record<string, 'create'> = {};
 	for (const file of t.app.vault.getAllLoadedFiles()) {
 		const path = file.path;
-		if (!path || path === '/' || isOwnPluginPath(t, path)) continue;
+		if (!path || path === '/' || isOwnPluginPath(t, path) || isIgnored(t, path)) continue;
 		if (path === t.app.vault.configDir || path.startsWith(t.app.vault.configDir + '/')) continue;
 		ops[path] = 'create';
 	}

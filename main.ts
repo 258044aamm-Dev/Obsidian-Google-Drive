@@ -1,3 +1,4 @@
+import { countIgnoredFiles, dropIgnoredMarks, isIgnored } from './helpers/ignore';
 import { checkConnection, checkDriveHost, getDriveClient, unSplitPath } from './helpers/drive';
 import { resetRetryWindow } from './helpers/net-retry';
 import { KEEP_OPEN_NOTICE, holdScreenAwake, onVisibilityChange, releaseScreen } from './helpers/mobile-sync';
@@ -64,6 +65,8 @@ interface PluginSettings {
 	ribbonBadges?: boolean;
 	/** Ask Google Drive now and then how many changes are waiting, and show it on the Pull ribbon icon. Off by default. */
 	pullBadge?: boolean;
+	/** Files and folders sync leaves alone: one pattern per line (see helpers/ignore.ts). */
+	ignorePatterns?: string;
 	syncConfigFiles?: boolean;
 	/** Sync the themes in the configuration folder. On unless explicitly false. */
 	syncThemes?: boolean;
@@ -139,6 +142,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		const { vault } = this.app;
 
 		await this.loadSettings();
+		dropIgnoredMarks(this); // a list that was edited while the plugin was off
 		await loadEncryption(this);
 		this.diagnostics.enabled = this.settings.enableDiagnostics;
 		this.diagnostics.maskPaths = this.settings.maskFilePaths;
@@ -360,6 +364,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 	handleCreate(file: TAbstractFile) {
 		this.vaultEventCount++;
+		if (isIgnored(this, file.path)) return;
 		if (this.settings.operations[file.path] === 'delete') {
 			if (file instanceof TFile) {
 				this.settings.operations[file.path] = 'modify';
@@ -382,6 +387,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 	handleDelete(file: TAbstractFile) {
 		this.vaultEventCount++;
+		if (isIgnored(this, file.path)) return;
 		if (this.settings.operations[file.path] === 'create') {
 			delete this.settings.operations[file.path];
 		} else if (!file.path.includes('"')) {
@@ -394,6 +400,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 	handleModify(file: TAbstractFile) {
 		this.vaultEventCount++;
+		if (isIgnored(this, file.path)) return;
 		const operation = this.settings.operations[file.path];
 		if (operation === 'create' || operation === 'modify') {
 			this.scheduleAutoPush();
@@ -895,6 +902,34 @@ class SettingsTab extends PluginSettingTab {
 				},
 			},
 			{
+				name: 'Ignore list',
+				desc: 'Files and folders that sync leaves alone, one pattern per line. A name like BRAT-log.md or *.tmp matches at any depth. Daily/*.md or /Inbox starts at the vault root. * matches within one name, ** also across folders, ? is one character. A folder covers what is inside it. Lines starting with # are notes. Upper and lower case are the same. Files already on Drive stay where they are. This list is only for this device: use the same list on every device.',
+				control: {
+					type: 'textarea',
+					key: 'ignorePatterns',
+					placeholder: 'BRAT-log.md\n*.tmp\nArchive/',
+					rows: 5,
+				},
+			},
+			{
+				name: 'Ignored files',
+				render: (setting) => {
+					const row = renderRow(setting, 'Ignored files');
+					const text = row.createSpan();
+					const show = () => {
+						const count = countIgnoredFiles(this.plugin);
+						text.setText(
+							count === 1
+								? '1 file in this vault is ignored'
+								: `${count} files in this vault are ignored`,
+						);
+					};
+					show();
+					const btn = row.createEl('button', { text: 'Count again' });
+					btn.addEventListener('click', show);
+				},
+			},
+			{
 				name: 'Pull when Obsidian starts',
 				desc: 'Off by default: sync only happens when you press Pull or Push. Turn on to pull from Google Drive every time Obsidian opens (takes effect after restarting Obsidian).',
 				control: {
@@ -1112,6 +1147,12 @@ class SettingsTab extends PluginSettingTab {
 		if (key === 'autoPush') {
 			if (value) this.plugin.resumeAutoPushIfNeeded();
 			else this.plugin.clearAutoPushTimer();
+		}
+		if (key === 'ignorePatterns') {
+			if (dropIgnoredMarks(this.plugin)) {
+				this.plugin.updateStatusBar();
+				this.plugin.debouncedSaveSettings();
+			}
 		}
 		if (key === 'ribbonBadges') this.plugin.updateBadges();
 		if (key === 'pullBadge') {

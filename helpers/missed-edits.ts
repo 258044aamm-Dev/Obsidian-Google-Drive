@@ -13,6 +13,7 @@ import type ObsidianGoogleDrive from '../main';
 import { TFile } from 'obsidian';
 import { sameBytes } from './conflict-copy';
 import { isOwnPluginPath } from './own-plugin';
+import { isIgnored } from './ignore';
 import { sanitizeMessage } from './diagnostics';
 import { hashOf, recordSynced } from './sync-state';
 
@@ -61,7 +62,8 @@ const localFiles = (t: ObsidianGoogleDrive): (LocalFile & { file: TFile })[] => 
 			(file) =>
 				file.path !== vault.configDir &&
 				!file.path.startsWith(vault.configDir + '/') &&
-				!isOwnPluginPath(t, file.path),
+				!isOwnPluginPath(t, file.path) &&
+				!isIgnored(t, file.path),
 		)
 		.map((file) => ({
 			path: file.path,

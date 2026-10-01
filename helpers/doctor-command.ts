@@ -4,6 +4,7 @@ import { unSplitPath, folderMimeType } from './drive';
 import { getDriveAgent, refreshAccessToken } from './requests';
 import { buildDoctorReport, clockSkewMs, parseScopes, renderReport } from './doctor';
 import { isOwnPluginPath } from './own-plugin';
+import { isIgnored } from './ignore';
 import { unrecordedEditCandidates } from './missed-edits';
 import { findFalseMarks, findUnrememberedMarks } from './sync-state';
 
@@ -105,7 +106,9 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 			.getAllLoadedFiles()
 			.filter((f) => f instanceof TFile || f instanceof TFolder)
 			.map((f) => f.path)
-			.filter((p) => p !== '/' && p !== '' && !isOwnPluginPath(t, p));
+			.filter(
+				(p) => p !== '/' && p !== '' && !isOwnPluginPath(t, p) && !isIgnored(t, p),
+			);
 
 		const report = buildDoctorReport({
 			pluginVersion: t.manifest?.version ?? 'unknown',
@@ -121,6 +124,7 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 			localPaths,
 			drive: driveFiles
 				.filter(({ properties }) => properties?.config !== 'true')
+				.filter(({ properties }) => !isIgnored(t, unSplitPath(properties)))
 				.map(({ id, properties, mimeType }) => ({
 					id,
 					path: unSplitPath(properties),

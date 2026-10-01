@@ -12,7 +12,8 @@
  * Both are additive, optional settings. Losing them only brings back the older, slower checks.
  */
 import type ObsidianGoogleDrive from '../main';
-import { configCategoryOf, isConfigPathSynced } from './config-scope';
+import { configCategoryOf } from './config-scope';
+import { isSyncedPath } from './ignore';
 import { isOwnPluginPath } from './own-plugin';
 
 export interface FileStamp {
@@ -266,7 +267,7 @@ export const seedConfigBaselines = async (t: ObsidianGoogleDrive) => {
 		for (const path of Object.values(t.settings.driveIdToPath)) {
 			if (configCategoryOf(configDir, path) === undefined) continue;
 			if (path === configDir || isOwnPluginPath(t, path)) continue;
-			if (!isConfigPathSynced(t, path)) continue;
+			if (!isSyncedPath(t, path)) continue;
 			if (t.settings.syncedFiles?.[path]) continue;
 			await recordSyncedFromDisk(t, path);
 		}

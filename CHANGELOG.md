@@ -4,6 +4,21 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.10.0 - 2026-10-01
+
+### Added
+- **Ignore list.** A new text box in the settings, **Ignore list**: one pattern per line for files and folders that sync leaves alone. Use it for a file that every device writes to, such as `BRAT-log.md`, which would otherwise be a conflict on every sync.
+  - A name such as `BRAT-log.md` or `*.tmp` matches at any depth. A pattern with a `/` at the start or in the middle starts at the vault root (`Daily/*.md`, `/Inbox`). `*` matches within one name, `**` also across folders, `?` is one character. A `/` at the end is allowed (`Archive/`). A folder covers everything inside it. Lines starting with `#` are notes. Upper and lower case are the same. There are no exceptions with `!`.
+  - An ignored path is never uploaded, never deleted on Drive, never pulled, never counted (Push guard, ribbon badges, Sync doctor) and never a conflict. Marks that were already pending for it are dropped when the list changes. The files themselves are not touched, here or on Drive.
+  - A file that is already on Drive stays there. If the Drive copy is deleted or the folder around it is removed on another device, the ignored file on this device is kept (and so is its folder).
+  - **Renaming** is a delete of the old name plus a create of the new one: a synced file renamed to an ignored name is removed from Drive under its old name and kept here; an ignored file renamed to a normal name is uploaded.
+  - The list is saved on this device only (the plugin's folder is never synced). Use the same list on every device. **Ignored files** below the box shows how many files in this vault match.
+  - Take a pattern out and the next Push uploads what was changed in the meantime, and the next Pull treats the file like any other (a file that differs on both sides keeps both versions).
+  - The matcher is a small automaton, not a regular expression: no pattern can be invalid or slow. `*` or `**` alone ignores everything, so check the count under the box.
+
+### Notes
+- With an empty list nothing changes. The restore-point history is not affected by the list (it records and restores Drive as it is).
+
 ## 3.9.0 - 2026-10-01
 
 ### Added

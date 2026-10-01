@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.10.0: ignore list
+
+The settings have a new **Ignore list**: one pattern per line for files and folders that sync should leave alone, for example `BRAT-log.md` (a file every device writes to) or `Archive/`. Ignored files are never uploaded, never deleted on Drive, never pulled and never a conflict; files already on Drive stay there. A name matches at any depth, `Daily/*.md` or `/Inbox` start at the vault root, `*` stays inside one name, `**` crosses folders, and a folder covers what is inside it. The list is per device, so use the same one everywhere. With an empty list nothing changes.
+
 ## What is new in 3.9.0: counts on the ribbon icons
 
 The Push icon now shows a small number: how many changes are waiting on this device. If you turn on **Check Google Drive for waiting changes** in the settings, the Pull icon also shows how many changes are waiting on Google Drive (asked once at startup and every 15 minutes, never during a sync). Both can be switched off with **Show counts on the ribbon icons**. Nothing else changed.

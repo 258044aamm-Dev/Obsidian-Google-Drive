@@ -16,7 +16,7 @@ import {
 	partitionFolderDeletions,
 } from './folder-deletion';
 import { isOwnPluginPath } from './own-plugin';
-import { isConfigPathSynced } from './config-scope';
+import { isIgnored, isSyncedPath } from './ignore';
 import { connectionHint } from './net-retry';
 import { addTrashedAsRemoved } from './trash';
 import { sameBytes, saveConflictCopy } from './conflict-copy';
@@ -103,15 +103,17 @@ export const pull = async (
 		const recentlyModified = listedRecentlyModified.filter(
 			({ properties }) =>
 				!isOwnPluginPath(t, unSplitPath(properties)) &&
-				// a switched-off kind of settings file (see config-scope.ts) is neither pulled nor counted
-				isConfigPathSynced(t, unSplitPath(properties)),
+				// a switched-off kind of settings file (see config-scope.ts) and an ignored path (see ignore.ts)
+				// are neither pulled nor counted
+				isSyncedPath(t, unSplitPath(properties)),
 		);
 
 		const cloudSet = new Set(
 			Object.values(t.settings.driveIdToPath).filter(
 				(path) =>
 					!path.startsWith(vault.configDir + '/') &&
-					path !== vault.configDir,
+					path !== vault.configDir &&
+					!isIgnored(t, path),
 			),
 		);
 
@@ -119,7 +121,7 @@ export const pull = async (
 			vault
 				.getAllLoadedFiles()
 				.map((file) => file.path)
-				.filter((path) => path !== '/'),
+				.filter((path) => path !== '/' && !isIgnored(t, path)),
 		);
 
 		cloudSet.forEach((path) => {
@@ -195,7 +197,8 @@ export const pull = async (
 			.filter(({ removed }) => removed)
 			.map(({ fileId }) => {
 				const path = t.settings.driveIdToPath[fileId];
-				if (!path) return;
+				// an ignored file that is gone from Drive stays here, and Drive's id stays known
+				if (!path || isIgnored(t, path)) return;
 				removedIds.add(fileId);
 
 				const file = vault.getAbstractFileByPath(path);
@@ -218,7 +221,7 @@ export const pull = async (
 					isFolder: mimeType === folderMimeType,
 				}));
 			const gone = Object.values(removedPaths).filter(
-				(path): path is string => !!path && isConfigPathSynced(t, path),
+				(path): path is string => !!path && isSyncedPath(t, path),
 			);
 			guard.remoteCount = countRemoteChanges(changed, gone);
 			guard.conflicts = findCollisions(
@@ -336,6 +339,8 @@ export const pull = async (
 			const implied = findImpliedDescendants(
 				removedFolders,
 				(path, isFolder) => {
+					// an ignored file inside a removed folder is not Drive's to take away
+					if (isIgnored(t, path)) return 'unknown';
 					const id = pathToId[path];
 					if (!id || modifiedOnDrive.has(id)) return 'unknown';
 					const operation = t.settings.operations[path];
@@ -637,7 +642,7 @@ export const pull = async (
 						const path = removedPaths[fileId];
 						if (!path || vault.getAbstractFileByPath(path)) return;
 						if (isOwnPluginPath(t, path)) return;
-						if (!isConfigPathSynced(t, path)) return;
+						if (!isSyncedPath(t, path)) return;
 						const stat = await adapter.stat(path);
 						if (!stat) return;
 						return { path, type: stat.type };

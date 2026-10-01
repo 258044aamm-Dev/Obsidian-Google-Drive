@@ -9,6 +9,7 @@ Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 ### Fixed
 - **"HTTP 403 - Insufficient Google Drive permissions" when turning on "Check Google Drive for waiting changes".** The check that fills the number on the Pull icon (3.9.0) asked Google Drive without signing in first. Pull and Push sign in first, so they were fine, but on a device that had not yet pulled or pushed since Obsidian started (for example with "Pull when Obsidian starts" off) the check went out unsigned and Google refused it with a 403 and the misleading advice to re-authorize. The check now signs in first, like Pull and Push. Your permissions and token were never the problem. The same message could have appeared again at every start, 10 seconds in, and every 15 minutes, for anyone with the check on.
 - The check also stays quiet when the device is offline (no repeated notice).
+- **The "Show a Drive icon in the note header" switch now works at once, on a desktop and on a phone.** Switching it on did not bring the icon back until you opened another note or changed the layout, and on a desktop (where the settings window stays open on top of the notes) that looked like "nothing happens". Switching it on now shows the icon in every open note immediately, and switching it off removes every icon of ours, also one that an earlier round had left behind. A note that closes and reopens can no longer end up with two icons.
 
 ## 3.13.1 - 2026-10-01
 

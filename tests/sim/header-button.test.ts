@@ -48,6 +48,11 @@ const makeView = () => {
 		view.added.push({ icon, title, cb, el });
 		return el;
 	};
+	// the page of the view: what is in its header right now (an icon taken away is no longer there)
+	view.containerEl = {
+		querySelectorAll: () => view.added.map((a: any) => a.el).filter((el: any) => el.classes.has('ogd-header-action') && !el.removed),
+	};
+	view.visible = () => view.added.filter((a: any) => !a.el.removed).length;
 	return view;
 };
 
@@ -245,5 +250,57 @@ describe('switched off, a desktop, and unloading', () => {
 		const bare = setup();
 		bare.t.app.workspace = {};
 		expect(() => new HeaderButton(bare.t, { onPush() {}, onPull() {} }).refresh()).not.toThrow();
+	});
+});
+
+describe('switching the setting on and off in the settings page', () => {
+	// the settings page calls update() (through updateBadges), and no layout event follows
+	it('on again shows the icon at once, in every view, once', () => {
+		const s = setup({ views: [makeView(), makeView()] });
+		s.header.start();
+		s.t.settings.headerButton = false;
+		s.header.update();
+		expect(s.views.map((v) => v.visible())).toEqual([0, 0]);
+		s.t.settings.headerButton = true;
+		s.header.update();
+		expect(s.views.map((v) => v.visible())).toEqual([1, 1]);
+		s.header.update();
+		s.header.update(false);
+		expect(s.views.map((v) => v.visible())).toEqual([1, 1]);
+	});
+
+	it('off takes away every icon, also one that is not on the list', () => {
+		const s = setup();
+		s.header.start();
+		const view = s.views[0];
+		// an icon left in the page by an earlier round (not remembered by this object)
+		const leftover = view.addAction('x', 'x', () => {});
+		leftover.addClass('ogd-header-action');
+		expect(view.visible()).toBe(2);
+		s.t.settings.headerButton = false;
+		s.header.update();
+		expect(view.visible()).toBe(0);
+	});
+
+	it('a view that drops out of the list and comes back does not get a second icon', () => {
+		const s = setup();
+		s.header.start();
+		const view = s.views[0];
+		s.views.length = 0; // gone for a moment
+		s.header.refresh();
+		s.views.push(view); // and back
+		s.header.refresh();
+		expect(view.visible()).toBe(1);
+		s.t.settings.headerButton = false;
+		s.header.update();
+		expect(view.visible()).toBe(0);
+	});
+
+	it('the number is right on an icon added by switching on', () => {
+		const s = setup({ settings: { operations: ops(2), headerButton: false } });
+		s.header.start();
+		s.t.settings.headerButton = true;
+		s.header.update();
+		expect(shown(s.views[0].added[0].el)).toBe('2');
 	});
 });

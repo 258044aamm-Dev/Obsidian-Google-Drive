@@ -33,6 +33,8 @@ The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
 Turning on **Check Google Drive for waiting changes** could show "HTTP 403 - Insufficient Google Drive permissions" even though everything was fine. The check forgot to sign in first. It now signs in like Pull and Push do. Nothing to change on your side.
 
+Also fixed in 3.13.2: the **Show a Drive icon in the note header** switch now adds or removes the icon immediately, on a desktop too.
+
 ## What is new in 3.13.1: files restored from the Drive Trash come back
 
 If you restore a file (or a folder) from the Google Drive Trash in the web page, every device now gets it back on its next Pull, also a device that had already removed it. Before, it came back only after someone edited the file. Nothing else changed.

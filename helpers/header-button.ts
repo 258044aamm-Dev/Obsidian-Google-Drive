@@ -62,34 +62,49 @@ export class HeaderButton {
 		this.refresh();
 	}
 
-	/** Adds the icon to views that lack it, and takes it away from all views when switched off. Never throws. */
+	/** Adds the icon to views that lack it, takes it away from all views when switched off, and updates the number. Never throws. */
 	refresh() {
-		try {
-			if (!this.enabled()) {
-				this.removeAll();
-				return;
-			}
-			const ws = this.t.app.workspace;
-			if (typeof ws?.iterateAllLeaves !== 'function') return;
-			const open = new Set<object>();
-			ws.iterateAllLeaves((leaf) => {
-				const view = leaf.view as unknown as ActionView | undefined;
-				if (!view || typeof view.addAction !== 'function') return;
-				open.add(view);
-				if (this.actions.has(view)) return;
-				const el = view.addAction(HEADER_ICON, HEADER_TITLE, (evt) => this.open(evt));
-				el.addClass('ogd-header-action');
-				this.actions.set(view, el);
-			});
-			// forget views that are closed
-			for (const view of [...this.actions.keys()]) if (!open.has(view)) this.actions.delete(view);
-			this.update();
-		} catch {
-			// an icon that cannot be added must never get in the way of a sync
-		}
+		this.update();
 	}
 
-	/** The number and the turning arrow. `busy` is given when a sync starts or ends; left out, the last state is kept. */
+	/** Every open view; a view that cannot take a header icon is left out. */
+	private views(): (ActionView & { containerEl?: HTMLElement })[] {
+		const ws = this.t.app.workspace;
+		const found: (ActionView & { containerEl?: HTMLElement })[] = [];
+		if (typeof ws?.iterateAllLeaves !== 'function') return found;
+		ws.iterateAllLeaves((leaf) => {
+			const view = leaf.view as unknown as (ActionView & { containerEl?: HTMLElement }) | undefined;
+			if (view && typeof view.addAction === 'function') found.push(view);
+		});
+		return found;
+	}
+
+	/** Our icons that sit in a view's page, whether or not this object added them (a leftover cannot stay behind). */
+	private iconsIn(view: { containerEl?: HTMLElement }): Element[] {
+		const list = view.containerEl?.querySelectorAll?.('.ogd-header-action');
+		return list ? Array.from(list) : [];
+	}
+
+	private attach() {
+		const open = new Set<object>();
+		for (const view of this.views()) {
+			open.add(view);
+			if (this.actions.has(view)) continue;
+			// take away what an earlier round left in this view, then add the one icon
+			this.iconsIn(view).forEach((el) => el.remove());
+			const el = view.addAction!(HEADER_ICON, HEADER_TITLE, (evt) => this.open(evt));
+			el.addClass('ogd-header-action');
+			this.actions.set(view, el);
+		}
+		// forget views that are closed
+		for (const view of [...this.actions.keys()]) if (!open.has(view)) this.actions.delete(view);
+	}
+
+	/**
+	 * The icon, its number and the turning arrow. `busy` is given when a sync starts or ends; left out, the
+	 * last state is kept. Also adds the icon to a view that has none (so switching the setting on works at
+	 * once) and removes every icon when it is switched off.
+	 */
 	update(busy?: boolean) {
 		try {
 			if (busy !== undefined) this.busy = busy;
@@ -97,6 +112,7 @@ export class HeaderButton {
 				this.removeAll();
 				return;
 			}
+			this.attach();
 			const show = this.t.settings.ribbonBadges !== false;
 			const pending = show ? Object.keys(this.t.settings.operations).length : 0;
 			const waiting = show ? this.t.waitingOnDrive : undefined;
@@ -106,7 +122,7 @@ export class HeaderButton {
 				else el.removeClass('spin');
 			}
 		} catch {
-			// see refresh()
+			// an icon that cannot be added must never get in the way of a sync
 		}
 	}
 
@@ -137,6 +153,8 @@ export class HeaderButton {
 	removeAll() {
 		for (const el of this.actions.values()) el.remove();
 		this.actions.clear();
+		// also any icon of ours that is not on the list (for example one a closed-and-reopened view kept)
+		for (const view of this.views()) this.iconsIn(view).forEach((el) => el.remove());
 	}
 
 	destroy() {

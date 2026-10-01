@@ -7,6 +7,8 @@ export default defineConfig(
 		'node_modules',
 		'dist',
 		'esbuild.config.mjs',
+		// stand-alone browser harness (stand-ins for Obsidian's page helpers; see tests/browser/README.md)
+		'tests/browser',
 		'version-bump.mjs',
 		'versions.json',
 		'main.js',

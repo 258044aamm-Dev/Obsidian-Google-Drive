@@ -4,6 +4,12 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.7.1 - 2026-10-01
+
+### Fixed
+- **The getting-started tour's buttons had no spacing or alignment.** The step's own buttons (for example "Open the sign-in page", "Pull now...") now sit in a row with a gap and wrap to full-width buttons on a phone. The navigation is a separate footer under a divider: Back and "Skip tour" on the left, "Skip this step" and Next on the right (on a phone, stacked with Next first). The three switches are aligned rows. The first-run notice buttons and the Pull confirmation window use the same layout. A hint explains why the buttons are greyed out before Google Drive is connected.
+- No change to syncing; only the tour window and `styles.css` changed.
+
 ## 3.7.0 - 2026-10-01
 
 ### Added

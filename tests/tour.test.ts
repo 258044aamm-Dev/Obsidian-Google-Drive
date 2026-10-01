@@ -18,6 +18,10 @@ class El {
 		this.children.push(e);
 		return e;
 	}
+	addClass() {}
+	createDiv(o?: { text?: string; cls?: string }) {
+		return this.createEl('div', o);
+	}
 	createSpan(o?: { text?: string }) {
 		return this.createEl('span', o);
 	}

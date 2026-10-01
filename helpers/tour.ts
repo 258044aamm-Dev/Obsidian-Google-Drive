@@ -64,9 +64,10 @@ class ConfirmWindow extends Modal {
 		this.setTitle(this.heading);
 		this.contentEl.empty();
 		this.contentEl.createEl('p', { text: this.body });
-		const cancel = this.contentEl.createEl('button', { text: 'Cancel' });
+		const footer = this.contentEl.createDiv({ cls: 'ogd-tour-footer ogd-tour-footer-end' });
+		const cancel = footer.createEl('button', { text: 'Cancel' });
 		cancel.addEventListener('click', () => this.close());
-		const ok = this.contentEl.createEl('button', {
+		const ok = footer.createEl('button', {
 			text: this.confirmLabel,
 			cls: 'mod-cta',
 		});
@@ -154,6 +155,7 @@ export class TourModal extends Modal {
 		const last = index === lastStepIndex();
 
 		contentEl.empty();
+		contentEl.addClass('ogd-tour');
 		this.setTitle(`Getting started (${index + 1} of ${TOUR_STEPS.length}): ${step.title}`);
 
 		for (const text of step.paragraphs) contentEl.createEl('p', { text });
@@ -176,10 +178,10 @@ export class TourModal extends Modal {
 				['syncSnippets', 'Sync CSS snippets'],
 			];
 			for (const [key, label] of rows) {
-				const row = contentEl.createEl('label');
+				const row = contentEl.createEl('label', { cls: 'ogd-tour-switch' });
 				const box = row.createEl('input', { type: 'checkbox' });
 				box.checked = this.t.settings[key] !== false;
-				row.createSpan({ text: ' ' + label });
+				row.createSpan({ text: label });
 				box.addEventListener('change', () => {
 					this.t.settings[key] = box.checked;
 					try {
@@ -200,32 +202,46 @@ export class TourModal extends Modal {
 			});
 		}
 
-		for (const action of step.actions ?? []) {
-			const needsConnection = !['open-signin', 'open-token-settings', 'open-settings'].includes(action.id);
-			const button = contentEl.createEl('button', { text: action.label });
-			if (needsConnection && !this.connected()) {
-				button.disabled = true;
-				button.title = 'Connect Google Drive first (step 2).';
+		if (step.actions?.length) {
+			const actions = contentEl.createDiv({ cls: 'ogd-tour-actions' });
+			for (const action of step.actions) {
+				const needsConnection = !['open-signin', 'open-token-settings', 'open-settings'].includes(action.id);
+				const button = actions.createEl('button', { text: action.label });
+				if (needsConnection && !this.connected()) {
+					button.disabled = true;
+					button.title = 'Connect Google Drive first (step 2).';
+				}
+				button.addEventListener('click', () => this.runAction(action.id));
 			}
-			button.addEventListener('click', () => this.runAction(action.id));
+			if (step.actions.some((a) => !['open-signin', 'open-token-settings', 'open-settings'].includes(a.id)) && !this.connected()) {
+				contentEl.createEl('p', {
+					text: 'These buttons turn on once Google Drive is connected (step 2).',
+					cls: 'ogd-tour-hint',
+				});
+			}
 		}
 
-		const back = contentEl.createEl('button', { text: 'Back' });
+		// Footer: Back and "Skip tour" on the left, "Skip this step" and Next on the right.
+		const footer = contentEl.createDiv({ cls: 'ogd-tour-footer' });
+		const left = footer.createDiv({ cls: 'ogd-tour-footer-group' });
+		const right = footer.createDiv({ cls: 'ogd-tour-footer-group' });
+
+		const back = left.createEl('button', { text: 'Back' });
 		back.disabled = index === 0;
 		back.addEventListener('click', () => this.go(previousStep(this.state)));
 
 		if (!last) {
-			const skip = contentEl.createEl('button', { text: 'Skip this step' });
-			skip.addEventListener('click', () => this.go(skipStep(this.state)));
-			const next = contentEl.createEl('button', { text: 'Next', cls: 'mod-cta' });
-			next.addEventListener('click', () => this.go(nextStep(this.state)));
-			const dismiss = contentEl.createEl('button', { text: 'Skip tour' });
+			const dismiss = left.createEl('button', { text: 'Skip tour', cls: 'ogd-tour-quiet' });
 			dismiss.addEventListener('click', () => {
 				saveState(this.t, dismissTour(this.state));
 				this.close();
 			});
+			const skip = right.createEl('button', { text: 'Skip this step' });
+			skip.addEventListener('click', () => this.go(skipStep(this.state)));
+			const next = right.createEl('button', { text: 'Next', cls: 'mod-cta' });
+			next.addEventListener('click', () => this.go(nextStep(this.state)));
 		} else {
-			const finish = contentEl.createEl('button', { text: 'Finish', cls: 'mod-cta' });
+			const finish = right.createEl('button', { text: 'Finish', cls: 'mod-cta' });
 			finish.addEventListener('click', () => {
 				saveState(this.t, finishTour(this.state));
 				this.close();
@@ -268,9 +284,12 @@ export const maybeOfferTour = (t: ObsidianGoogleDrive) => {
 
 	let notice: Notice | undefined;
 	const fragment = createFragment((frag) => {
-		frag.appendText('Welcome to Google Drive Sync. Take a one-minute tour of how to set it up? ');
+		frag.createDiv({
+			text: 'Welcome to Google Drive sync. Take a one-minute tour of how to set it up?',
+		});
+		const row = frag.createDiv({ cls: 'ogd-tour-offer-actions' });
 		const add = (label: string, run: () => void) => {
-			const button = frag.createEl('button', { text: label });
+			const button = row.createEl('button', { text: label });
 			button.addEventListener('click', () => {
 				notice?.hide();
 				run();

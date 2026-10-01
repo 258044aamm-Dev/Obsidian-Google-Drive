@@ -74,3 +74,86 @@
 	width: 14px;
 	height: 14px;
 }
+
+/* Getting-started tour */
+.ogd-tour p {
+	margin: 0 0 var(--size-4-3);
+	line-height: 1.5;
+}
+
+.ogd-tour .ogd-tour-hint {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.ogd-tour-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	margin: var(--size-4-4) 0;
+}
+
+.ogd-tour-switch {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin: var(--size-4-2) 0;
+	cursor: pointer;
+}
+
+.ogd-tour-switch input {
+	margin: 0;
+	flex: 0 0 auto;
+}
+
+.ogd-tour-footer {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-5);
+	padding-top: var(--size-4-3);
+	border-top: var(--border-width) solid var(--background-modifier-border);
+}
+
+.ogd-tour-footer-end {
+	justify-content: flex-end;
+}
+
+.ogd-tour-footer-group {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.ogd-tour .ogd-tour-quiet {
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+}
+
+.ogd-tour-offer-actions {
+	display: flex;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-2);
+}
+
+@media (max-width: 600px) {
+	.ogd-tour-actions button {
+		flex: 1 1 100%;
+	}
+
+	.ogd-tour-footer {
+		flex-direction: column-reverse;
+		align-items: stretch;
+	}
+
+	.ogd-tour-footer-group {
+		justify-content: space-between;
+	}
+
+	.ogd-tour-footer-group button {
+		flex: 1 1 auto;
+	}
+}

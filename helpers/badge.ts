@@ -11,6 +11,7 @@ import { folderMimeType, unSplitPath } from './drive';
 import { isSyncedPath } from './ignore';
 import { isOwnPluginPath } from './own-plugin';
 import { countRemoteChanges, type RemoteChange } from './push-guard';
+import { findUnseenChanged, lastChangePerFile } from './restored';
 import { isOwnUpload } from './sync-state';
 import { addTrashedAsRemoved } from './trash';
 
@@ -75,11 +76,16 @@ export const countWaitingOnDrive = async (
 		const changes = await t.drive.getChanges(t.settings.changesToken);
 		if (!changes) return undefined;
 		// Files moved to the Drive Trash count as removed, whether or not the feed says so (as in Pull).
+		changes.splice(0, changes.length, ...lastChangePerFile(changes));
 		await addTrashedAsRemoved(t, changes);
+		// files restored from the Trash count too (see restored.ts)
+		const unseen = await findUnseenChanged(t, changes, listed);
+		if (!unseen) return undefined;
+		const everyListed = [...listed, ...unseen];
 
 		const synced = (path: string) =>
 			!!path && !isOwnPluginPath(t, path) && isSyncedPath(t, path);
-		const changed: RemoteChange[] = listed
+		const changed: RemoteChange[] = everyListed
 			.filter(({ id, modifiedTime, mimeType }) => mimeType !== folderMimeType && !isOwnUpload(t, id, modifiedTime))
 			.map(({ id, properties }) => ({
 				path: unSplitPath(properties),

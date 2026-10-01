@@ -346,7 +346,8 @@ describe.each([
 	});
 
 	// ---- known limitations of the legacy design, fixed by the state-based engine (P2-P6) ----
-	it.fails('S4 phone clock ahead by 60s still receives a file pushed by the desktop', async () => {
+	// S4 was an expected failure until 3.13.1: Pull now also takes files that the changes feed lists and the time check missed.
+	it('S4 phone clock ahead by 60s still receives a file pushed by the desktop', async () => {
 		const { desktop, mobile } = await setup();
 		mobile.plugin.settings.lastSyncedAt = Date.now() + 60_000;
 		await mobile.save();

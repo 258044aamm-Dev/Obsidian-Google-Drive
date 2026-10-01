@@ -4,6 +4,17 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.13.1 - 2026-10-01
+
+### Fixed
+- **A file restored from the Google Drive Trash comes back on every device.** Pull downloaded only the files whose Drive "modified" time is newer than the last sync, and restoring a file from the Trash does not change that time. So a device that had already removed the file (because it was trashed) never got it back until somebody edited it. Pull now also takes the files that Drive's list of changes reports for files this device does not know and that the time check did not list. That includes whole folders with their notes. If you made a new note under the same name meanwhile, your note stays and the restored one is saved next to it as "Note (Drive date).md", like any other note changed on both sides. The number on the Pull icon counts such files too. It costs one extra listing of the vault, and only when a file really was restored.
+- **A file that was trashed and restored again before this device pulled is no longer removed here.** If Drive's list of changes reported both steps, the old "removed" step won. The last change of a file now decides.
+
+- **Side effect, also a fix: a phone whose clock runs ahead no longer misses files.** A file pushed by another device could be skipped by Pull when this device's clock was ahead of Google's (the "modified" time looked older than the last sync). The same list of changes now finds it. The test that recorded this as a known limitation (S4 in `tests/sim/regression.test.ts`) is now a normal passing test.
+
+### Tested, no change needed
+- What happens when files are changed in the Drive web page was checked on the simulated Drive: a replaced file version is pulled, a trashed or deleted file is removed here (and a note edited here is kept), a rename or a move on the web page changes nothing here and later edits still go to the same Drive file, and a new file uploaded in the web page is not seen by this plugin (it only sees the files it made itself) and disturbs nothing. These cases are in `tests/sim/drive-web.test.ts`.
+
 ## 3.13.0 - 2026-10-01
 
 ### Added

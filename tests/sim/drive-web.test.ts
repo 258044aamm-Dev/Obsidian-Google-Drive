@@ -6,8 +6,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.stubGlobal('window', globalThis);
 vi.mock('obsidian', async () => await import('./obsidian-mock'));
-import { sleep, notices } from './world';
-import { setup, simDefaults } from './scenario-helpers';
+import { sleep, notices, netLog, dec } from './world';
+import { setup, simDefaults, simE2ee } from './scenario-helpers';
 
 const text = async (d: any, path: string) => new TextDecoder().decode(await d.vault.adapter.readBinary(path));
 const find = (w: any, path: string) => [...w.drive.files.values()].find((f: any) => w.drive.shown(f) === path);
@@ -44,7 +44,8 @@ beforeEach(() => {
 });
 
 describe('edited in the Drive web page', () => {
-	it('a file this device did not touch gets the new content', async () => {
+	// the web page cannot write encrypted content, so this one is for plain vaults
+	it.skipIf(simE2ee.on)('a file this device did not touch gets the new content', async () => {
 		const { w, mobile } = await setup();
 		await sleep(30);
 		webEdit(w, 'Inbox/a.md', 'edited on the web');
@@ -56,11 +57,7 @@ describe('edited in the Drive web page', () => {
 });
 
 describe('restored from the Drive Trash', () => {
-	// KNOWN GAP (found by this test): Pull only downloads files whose Drive modifiedTime is newer than the last
-	// sync, and restoring from the Trash does not change modifiedTime (as far as the simulator and my reading of
-	// the Drive docs go; not checked on real Drive). So a device that already removed the file does not get it back
-	// until the file is next edited somewhere. Marked as an expected failure until the owner decides on a fix.
-	it.fails('a file that was trashed, pulled (so removed here) and then restored comes back', async () => {
+	it('a file that was trashed, pulled (so removed here) and then restored comes back', async () => {
 		const { w, mobile } = await setup();
 		await sleep(30);
 		w.drive.trash(find(w, 'Inbox/a.md').id);
@@ -116,7 +113,7 @@ describe('renamed or moved in the Drive web page', () => {
 		await sleep(20);
 		await desktop.pull();
 		await desktop.push();
-		expect(w.drive.files.get(id)!.content && new TextDecoder().decode(w.drive.files.get(id)!.content!)).toBe('a2');
+		expect(dec((await w.drive.contentOf(w.drive.files.get(id)!))!)).toBe('a2');
 		expect([...w.drive.files.values()].filter((f: any) => w.drive.shown(f) === 'Inbox/a.md' && !f.trashed)).toHaveLength(1);
 		await mobile.pull();
 		expect(await text(mobile, 'Inbox/a.md')).toBe('a2');
@@ -135,7 +132,7 @@ describe('renamed or moved in the Drive web page', () => {
 		await sleep(20);
 		await desktop.pull();
 		await desktop.push();
-		expect(new TextDecoder().decode(w.drive.files.get(id)!.content!)).toBe('a2');
+		expect(dec((await w.drive.contentOf(w.drive.files.get(id)!))!)).toBe('a2');
 		expect([...w.drive.files.values()].filter((f: any) => w.drive.shown(f) === 'Inbox/a.md' && !f.trashed)).toHaveLength(1);
 		expect(failures()).toEqual([]);
 	});
@@ -156,5 +153,83 @@ describe('a new file uploaded in the Drive web page', () => {
 		await mobile.pull();
 		expect(await text(mobile, 'root.md')).toBe('r2');
 		expect(failures()).toEqual([]);
+	});
+});
+
+describe('restored from the Trash when the feed reports a trashed file as removed', () => {
+	it('trashed and restored before this device pulled: the local file stays', async () => {
+		const { w, mobile } = await setup();
+		w.drive.trashEmitsRemoved = true;
+		await sleep(30);
+		w.drive.trash(find(w, 'Inbox/a.md').id);
+		w.drive.untrash(find(w, 'Inbox/a.md').id);
+		await mobile.pull();
+		expect(await text(mobile, 'Inbox/a.md')).toBe('a');
+		expect(mobile.ops()).toEqual({});
+	});
+});
+
+describe('files restored from the Trash, more cases', () => {
+	const listings = () => netLog.filter((l) => l.startsWith('GET') && l.includes('/drive/v3/files?')).length;
+
+	it('a whole folder with its files comes back', async () => {
+		const { w, mobile } = await setup();
+		await sleep(30);
+		w.drive.trash(find(w, 'Projects/Alpha').id);
+		await mobile.pull();
+		expect(mobile.vault.getFileByPath('Projects/Alpha/plan.md')).toBeNull();
+		await sleep(30);
+		w.drive.untrash(find(w, 'Projects/Alpha').id);
+		await mobile.pull();
+		expect(await text(mobile, 'Projects/Alpha/plan.md')).toBe('plan');
+		expect(await text(mobile, 'Projects/Alpha/notes/n1.md')).toBe('n1');
+		expect(mobile.ops()).toEqual({});
+		expect(failures()).toEqual([]);
+	});
+
+	it('does not overwrite a new note that was made here under the same name: both are kept', async () => {
+		const { w, mobile } = await setup();
+		await sleep(30);
+		w.drive.trash(find(w, 'Inbox/a.md').id);
+		await mobile.pull();
+		await sleep(30);
+		await mobile.vault.create('Inbox/a.md', 'written on the phone');
+		await sleep(20);
+		w.drive.untrash(find(w, 'Inbox/a.md').id);
+		await mobile.pull();
+		expect(await text(mobile, 'Inbox/a.md')).toBe('written on the phone');
+		const copies = mobile.vault.tree().filter((p: string) => p.startsWith('Inbox/a (Drive'));
+		expect(copies).toHaveLength(1);
+		expect(await text(mobile, copies[0]!)).toBe('a');
+	});
+
+	it('is counted as waiting on Drive until it is pulled', async () => {
+		const { w, mobile } = await setup();
+		await sleep(30);
+		w.drive.trash(find(w, 'Inbox/a.md').id);
+		await mobile.pull();
+		await sleep(30);
+		w.drive.untrash(find(w, 'Inbox/a.md').id);
+		const { countWaitingOnDrive } = await import('../../helpers/badge');
+		expect(await countWaitingOnDrive(mobile.plugin)).toBe(1);
+		await mobile.pull();
+		expect(await countWaitingOnDrive(mobile.plugin)).toBe(0);
+	});
+
+	it('costs one more listing only when a file really was restored', async () => {
+		const { w, mobile } = await setup();
+		await sleep(30);
+		webEdit(w, 'root.md', 'r2');
+		let before = listings();
+		await mobile.pull();
+		const plain = listings() - before;
+		await sleep(30);
+		w.drive.trash(find(w, 'Inbox/a.md').id);
+		await mobile.pull();
+		await sleep(30);
+		w.drive.untrash(find(w, 'Inbox/a.md').id);
+		before = listings();
+		await mobile.pull();
+		expect(listings() - before).toBe(plain + 1);
 	});
 });

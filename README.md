@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.13.1: files restored from the Drive Trash come back
+
+If you restore a file (or a folder) from the Google Drive Trash in the web page, every device now gets it back on its next Pull, also a device that had already removed it. Before, it came back only after someone edited the file. Nothing else changed.
+
 ## What is new in 3.13.0: the header icon on a desktop too
 
 The Drive icon in the header of every note (3.12.0) is now also shown on a desktop, next to the three-dots button. Click it to choose **Push** or **Pull**; the number on it shows what is waiting. Switch it off under **Advanced**.

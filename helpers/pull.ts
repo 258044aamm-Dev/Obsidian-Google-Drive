@@ -18,6 +18,7 @@ import {
 import { isOwnPluginPath } from './own-plugin';
 import { isIgnored, isSyncedPath } from './ignore';
 import { connectionHint } from './net-retry';
+import { findUnseenChanged, lastChangePerFile } from './restored';
 import { addTrashedAsRemoved } from './trash';
 import { sameBytes, saveConflictCopy } from './conflict-copy';
 import {
@@ -73,7 +74,7 @@ export const pull = async (
 
 		await t.ensureMigrated?.();
 
-		const listedRecentlyModified = await t.diagnostics.withContext(
+		const listedByTime = await t.diagnostics.withContext(
 			'list-files',
 			'search-recently-modified',
 			async () => {
@@ -90,7 +91,7 @@ export const pull = async (
 				});
 			},
 		);
-		if (!listedRecentlyModified) {
+		if (!listedByTime) {
 			new Notice(
 				'Pull failed: could not list drive files. Check diagnostics.',
 				8000,
@@ -98,6 +99,39 @@ export const pull = async (
 			if (!silenceNotices) t.abortSync(syncNotice);
 			return false;
 		}
+
+		const changes = await t.diagnostics.withContext(
+			'fetch-changes',
+			'get-changes',
+			async () => {
+				lastPhase = 'fetch-changes';
+				return t.drive.getChanges(t.settings.changesToken);
+			},
+		);
+		if (!changes) {
+			new Notice(
+				'Pull failed: could not fetch drive changes. Check diagnostics.',
+				8000,
+			);
+			if (!silenceNotices) t.abortSync(syncNotice);
+			return false;
+		}
+		// a file's last change says how it ended up (trashed and restored again is not removed)
+		changes.splice(0, changes.length, ...lastChangePerFile(changes));
+		// Files moved to the Drive Trash count as removed, whether or not the feed says so.
+		await addTrashedAsRemoved(t, changes);
+
+		// Files restored from the Trash are not newer by their modified time, but the feed lists them.
+		const unseen = await findUnseenChanged(t, changes, listedByTime);
+		if (!unseen) {
+			new Notice(
+				'Pull failed: could not list drive files. Check diagnostics.',
+				8000,
+			);
+			if (!silenceNotices) t.abortSync(syncNotice);
+			return false;
+		}
+		const listedRecentlyModified = [...listedByTime, ...unseen];
 
 		// This plugin's own folder (code + private state) is never pulled.
 		const recentlyModified = listedRecentlyModified.filter(
@@ -160,24 +194,6 @@ export const pull = async (
 			}
 		});
 
-		const changes = await t.diagnostics.withContext(
-			'fetch-changes',
-			'get-changes',
-			async () => {
-				lastPhase = 'fetch-changes';
-				return t.drive.getChanges(t.settings.changesToken);
-			},
-		);
-		if (!changes) {
-			new Notice(
-				'Pull failed: could not fetch drive changes. Check diagnostics.',
-				8000,
-			);
-			if (!silenceNotices) t.abortSync(syncNotice);
-			return false;
-		}
-		// Files moved to the Drive Trash count as removed, whether or not the feed says so.
-		await addTrashedAsRemoved(t, changes);
 
 		const removedPaths = Object.fromEntries(
 			changes

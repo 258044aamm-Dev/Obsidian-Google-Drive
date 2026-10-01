@@ -1,3 +1,4 @@
+import { advancedSettingGroup, isAdvancedOpen } from './helpers/advanced';
 import { countIgnoredFiles, dropIgnoredMarks, isIgnored } from './helpers/ignore';
 import { checkConnection, checkDriveHost, getDriveClient, unSplitPath } from './helpers/drive';
 import { resetRetryWindow } from './helpers/net-retry';
@@ -12,6 +13,7 @@ import {
 	Platform,
 	Plugin,
 	PluginSettingTab,
+	type SettingDefinition,
 	type SettingDefinitionItem,
 	TAbstractFile,
 	TFile,
@@ -786,6 +788,17 @@ class SettingsTab extends PluginSettingTab {
 	}
 
 	getSettingDefinitions(): SettingDefinitionItem[] {
+		const redraw = () => this.update();
+		return [
+			...this.basicDefinitions(),
+			advancedSettingGroup(this.advancedDefinitions(), redraw),
+			// the commands belong to the advanced part: they are only there while it is unfolded
+			...(isAdvancedOpen() ? [commandsSettingGroup(this.plugin, redraw)] : []),
+		];
+	}
+
+	/** What every user needs: connect, sync, and the three everyday switches. */
+	private basicDefinitions(): SettingDefinition[] {
 		return [
 			{
 				name: 'Getting started',
@@ -884,6 +897,39 @@ class SettingsTab extends PluginSettingTab {
 				},
 			},
 			{
+				name: 'Pull when Obsidian starts',
+				desc: 'Off by default: sync only happens when you press Pull or Push. Turn on to pull from Google Drive every time Obsidian opens (takes effect after restarting Obsidian).',
+				control: {
+					type: 'toggle',
+					key: 'startupPull',
+					defaultValue: false,
+				},
+			},
+			{
+				name: 'Automatically push changes',
+				desc: 'Push one minute after the most recent local file change.',
+				control: {
+					type: 'toggle',
+					key: 'autoPush',
+					defaultValue: false,
+				},
+			},
+			{
+				name: 'Move deleted files to Google Drive Trash',
+				desc: 'On by default: files you delete are moved to the Google Drive Trash, where you can restore them for about 30 days, instead of being deleted permanently. Every device that syncs this vault must run this version of the plugin, otherwise it will not see these deletions. Turn off to delete permanently.',
+				control: {
+					type: 'toggle',
+					key: 'deleteToTrash',
+					defaultValue: true,
+				},
+			},
+		];
+	}
+
+	/** Everything else. Folded away until the user opens the Advanced section. */
+	private advancedDefinitions(): SettingDefinition[] {
+		return [
+			{
 				name: 'Show counts on the ribbon icons',
 				desc: 'A small number on the Push icon: how many changes are waiting on this device. Costs nothing. On a phone the ribbon is in the side menu.',
 				control: {
@@ -927,33 +973,6 @@ class SettingsTab extends PluginSettingTab {
 					show();
 					const btn = row.createEl('button', { text: 'Count again' });
 					btn.addEventListener('click', show);
-				},
-			},
-			{
-				name: 'Pull when Obsidian starts',
-				desc: 'Off by default: sync only happens when you press Pull or Push. Turn on to pull from Google Drive every time Obsidian opens (takes effect after restarting Obsidian).',
-				control: {
-					type: 'toggle',
-					key: 'startupPull',
-					defaultValue: false,
-				},
-			},
-			{
-				name: 'Automatically push changes',
-				desc: 'Push one minute after the most recent local file change.',
-				control: {
-					type: 'toggle',
-					key: 'autoPush',
-					defaultValue: false,
-				},
-			},
-			{
-				name: 'Move deleted files to Google Drive Trash',
-				desc: 'On by default: files you delete are moved to the Google Drive Trash, where you can restore them for about 30 days, instead of being deleted permanently. Every device that syncs this vault must run this version of the plugin, otherwise it will not see these deletions. Turn off to delete permanently.',
-				control: {
-					type: 'toggle',
-					key: 'deleteToTrash',
-					defaultValue: true,
 				},
 			},
 			{
@@ -1138,7 +1157,6 @@ class SettingsTab extends PluginSettingTab {
 					});
 				},
 			},
-			commandsSettingGroup(this.plugin, () => this.update()),
 		];
 	}
 

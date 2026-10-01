@@ -4,6 +4,12 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.10.2 - 2026-10-01
+
+### Changed
+- **The settings page is shorter: an Advanced section holds the rest, and starts folded.** A new user sees only what is needed to connect and sync: Getting started, Get refresh token, Refresh token, Sync now, Pull when Obsidian starts, Automatically push changes and Move deleted files to Google Drive Trash. Under the heading **Advanced** a line says what is behind the arrow. Press the arrow to show everything else: the ribbon counts and the Drive check, the ignore list, which settings files sync (settings, themes, snippets), version history, end-to-end encryption, the connection settings (access token endpoint, client ID and secret) and diagnostics. The **Commands** section is part of it: it appears under Advanced once that is open, and keeps its own arrow (folded).
+- Nothing was removed, renamed or reset: every setting keeps its name, its place in the stored settings and its value. The choice to unfold is kept while Obsidian runs and starts folded again after a restart.
+
 ## 3.10.1 - 2026-10-01
 
 ### Changed

@@ -12,6 +12,7 @@ import type { SettingDefinition, SettingDefinitionGroup } from 'obsidian';
 import type ObsidianGoogleDrive from '../main';
 import { runCompareActiveNote } from './compare-note-command';
 import { runSyncDoctor } from './doctor-command';
+import { foldButton } from './fold';
 import { fixDrivePath } from './fix_drive_path';
 import { createRestorePointNow, startVaultRestore } from './history-ui';
 import { pull } from './pull';
@@ -273,15 +274,10 @@ export const commandsSettingGroup = (
 		heading: 'Commands',
 		cls: 'ogd-commands',
 		extraButtons: [
-			(button) => {
-				button
-					.setIcon(open ? 'chevron-down' : 'chevron-right')
-					.setTooltip(open ? 'Hide the commands' : 'Show the commands')
-					.onClick(() => {
-						commandsOpen = !commandsOpen;
-						redraw();
-					});
-			},
+			foldButton(open, 'the commands', () => {
+				commandsOpen = !commandsOpen;
+				redraw();
+			}),
 		],
 		...(open && {
 			search: {

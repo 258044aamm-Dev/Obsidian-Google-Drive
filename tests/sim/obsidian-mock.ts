@@ -73,7 +73,9 @@ export class Menu {
 }
 export const lastMenu: { current?: Menu } = {};
 export class App {}
-export class PluginSettingTab {}
+export class PluginSettingTab {
+	update() {}
+}
 export const setIcon = () => {};
 export const debounce = (fn: any) => fn; // immediate
 export const requestUrl = async (req: any) => {
@@ -89,7 +91,11 @@ export class Plugin {
 		this.app = app;
 		this.manifest = manifest;
 	}
-	addSettingTab() {}
+	/** the settings tab the plugin added (tests read its definitions) */
+	settingTab: any;
+	addSettingTab(tab: any) {
+		this.settingTab = tab;
+	}
 	/** Stand-in for the status bar element: records what the plugin put in it. */
 	statusBarEls: any[] = [];
 	addStatusBarItem() {

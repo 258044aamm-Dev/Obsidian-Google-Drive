@@ -157,3 +157,9 @@
 		flex: 1 1 auto;
 	}
 }
+
+.ogd-tour-warning,
+.ogd-warning-text {
+	font-weight: 600;
+	color: var(--text-warning, var(--text-error));
+}

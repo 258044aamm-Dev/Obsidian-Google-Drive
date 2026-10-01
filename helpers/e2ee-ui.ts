@@ -5,6 +5,14 @@ import { MIN_PASSPHRASE_CHARS, checkPassphrase } from './crypto';
 
 type Field = { label: string; key: string; desc?: string; hint?: boolean };
 
+/** Optional extras of the passphrase window (only "Turn on end-to-end encryption" uses them). */
+type Advice = {
+	/** A warning shown first, in bold. */
+	warning: string;
+	/** A box that must be ticked before the submit button works. */
+	acknowledge: string;
+};
+
 /** A small dialog with password fields. `onSubmit` returns an error text to show, or nothing when it worked. */
 class PassphraseModal extends Modal {
 	private values: Record<string, string> = {};
@@ -19,6 +27,7 @@ class PassphraseModal extends Modal {
 		private readonly fields: Field[],
 		private readonly submitLabel: string,
 		private readonly onSubmit: (values: Record<string, string>) => Promise<string | undefined>,
+		private readonly advice?: Advice,
 	) {
 		super(t.app);
 	}
@@ -26,6 +35,9 @@ class PassphraseModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 		this.setTitle(this.title);
+		if (this.advice) {
+			contentEl.createEl('p', { text: this.advice.warning, cls: 'ogd-warning-text' });
+		}
 		for (const line of this.intro) contentEl.createEl('p', { text: line });
 		for (const field of this.fields) {
 			const setting = new Setting(contentEl).setName(field.label);
@@ -41,12 +53,27 @@ class PassphraseModal extends Modal {
 		}
 		this.hintEl = contentEl.createEl('p', { text: '' });
 		this.errorEl = contentEl.createEl('p', { text: '' });
+		let acknowledged = !this.advice;
+		const submitAllowed = () => acknowledged;
+		let ackBox: { addEventListener: (e: string, f: () => void) => void; checked: boolean } | undefined;
+		if (this.advice) {
+			const row = contentEl.createEl('label', { cls: 'ogd-tour-switch' });
+			ackBox = row.createEl('input', { type: 'checkbox' });
+			row.createSpan({ text: this.advice.acknowledge });
+		}
 		const buttons = contentEl.createDiv({ cls: 'modal-button-container' });
 		const submit = buttons.createEl('button', { text: this.submitLabel, cls: 'mod-cta' });
+		if (ackBox) {
+			submit.disabled = true;
+			ackBox.addEventListener('change', () => {
+				acknowledged = ackBox?.checked === true;
+				submit.disabled = this.busy || !submitAllowed();
+			});
+		}
 		const cancel = buttons.createEl('button', { text: 'Cancel' });
 		cancel.addEventListener('click', () => this.close());
 		submit.addEventListener('click', () => {
-			if (this.busy) return;
+			if (this.busy || !submitAllowed()) return;
 			this.busy = true;
 			submit.disabled = true;
 			this.errorEl?.setText('Working, this can take a few seconds...');
@@ -61,7 +88,7 @@ class PassphraseModal extends Modal {
 				.catch((error: unknown) => this.errorEl?.setText(error instanceof Error ? error.message : String(error)))
 				.finally(() => {
 					this.busy = false;
-					submit.disabled = false;
+					submit.disabled = !submitAllowed();
 				});
 		});
 	}
@@ -137,6 +164,11 @@ export const openEnableEncryption = (t: ObsidianGoogleDrive, refresh: () => void
 			} catch (error) {
 				return asText(error);
 			}
+		},
+		{
+			warning:
+				'Advanced option: if you are a beginner, press Cancel. If you lose the passphrase, your notes are lost for good.',
+			acknowledge: 'I understand that nobody can recover my notes without the passphrase.',
 		},
 	).open();
 };

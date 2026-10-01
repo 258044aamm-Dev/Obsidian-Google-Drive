@@ -57,6 +57,8 @@ class ConfirmWindow extends Modal {
 		private body: string,
 		private confirmLabel: string,
 		private onConfirm: () => void,
+		/** Make Cancel the highlighted button (for a risky action). */
+		private cancelFirst = false,
 	) {
 		super(app);
 	}
@@ -65,11 +67,14 @@ class ConfirmWindow extends Modal {
 		this.contentEl.empty();
 		this.contentEl.createEl('p', { text: this.body });
 		const footer = this.contentEl.createDiv({ cls: 'ogd-tour-footer ogd-tour-footer-end' });
-		const cancel = footer.createEl('button', { text: 'Cancel' });
+		const cancel = footer.createEl('button', {
+			text: 'Cancel',
+			cls: this.cancelFirst ? 'mod-cta' : undefined,
+		});
 		cancel.addEventListener('click', () => this.close());
 		const ok = footer.createEl('button', {
 			text: this.confirmLabel,
-			cls: 'mod-cta',
+			cls: this.cancelFirst ? undefined : 'mod-cta',
 		});
 		ok.addEventListener('click', () => {
 			this.close();
@@ -137,8 +142,18 @@ export class TourModal extends Modal {
 				if (!t.syncing) void push(t);
 				return;
 			case 'encryption':
-				this.close();
-				openEnableEncryption(t, () => undefined);
+				// Advanced option: ask once more, with Cancel as the main choice.
+				new ConfirmWindow(
+					this.app,
+					'Turn on encryption?',
+					'This is for advanced users. If you lose the passphrase, your notes cannot be recovered by anyone. Continue only if you understand this.',
+					'Continue (advanced)',
+					() => {
+						this.close();
+						openEnableEncryption(t, () => undefined);
+					},
+					true,
+				).open();
 				return;
 			case 'doctor':
 				this.close();
@@ -158,6 +173,9 @@ export class TourModal extends Modal {
 		contentEl.addClass('ogd-tour');
 		this.setTitle(`Getting started (${index + 1} of ${TOUR_STEPS.length}): ${step.title}`);
 
+		if (step.warning) {
+			contentEl.createEl('p', { text: step.warning, cls: 'ogd-tour-warning' });
+		}
 		for (const text of step.paragraphs) contentEl.createEl('p', { text });
 
 		if (step.id === 'connect') {
@@ -206,7 +224,10 @@ export class TourModal extends Modal {
 			const actions = contentEl.createDiv({ cls: 'ogd-tour-actions' });
 			for (const action of step.actions) {
 				const needsConnection = !['open-signin', 'open-token-settings', 'open-settings'].includes(action.id);
-				const button = actions.createEl('button', { text: action.label });
+				const button = actions.createEl('button', {
+					text: action.label,
+					cls: step.warning ? 'ogd-tour-quiet' : undefined,
+				});
 				if (needsConnection && !this.connected()) {
 					button.disabled = true;
 					button.title = 'Connect Google Drive first (step 2).';
@@ -236,9 +257,16 @@ export class TourModal extends Modal {
 				saveState(this.t, dismissTour(this.state));
 				this.close();
 			});
-			const skip = right.createEl('button', { text: 'Skip this step' });
+			// On a step that advises against its action, skipping is the highlighted choice.
+			const skip = right.createEl('button', {
+				text: 'Skip this step',
+				cls: step.warning ? 'mod-cta' : undefined,
+			});
 			skip.addEventListener('click', () => this.go(skipStep(this.state)));
-			const next = right.createEl('button', { text: 'Next', cls: 'mod-cta' });
+			const next = right.createEl('button', {
+				text: 'Next',
+				cls: step.warning ? undefined : 'mod-cta',
+			});
 			next.addEventListener('click', () => this.go(nextStep(this.state)));
 		} else {
 			const finish = right.createEl('button', { text: 'Finish', cls: 'mod-cta' });

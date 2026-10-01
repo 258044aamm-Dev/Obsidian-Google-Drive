@@ -6,15 +6,17 @@ class El {
 	children: El[] = [];
 	handlers: Record<string, () => void> = {};
 	text = '';
+	cls = '';
 	disabled = false;
 	checked = false;
 	constructor(public tag = 'div') {}
 	empty() {
 		this.children = [];
 	}
-	createEl(tag: string, o?: { text?: string }) {
+	createEl(tag: string, o?: { text?: string; cls?: string }) {
 		const e = new El(tag);
 		e.text = o?.text ?? '';
+		e.cls = o?.cls ?? '';
 		this.children.push(e);
 		return e;
 	}
@@ -205,18 +207,67 @@ describe('the tour window', () => {
 		expect(settings.syncSnippets).toBeUndefined();
 	});
 
-	it('the doctor and encryption steps start the matching actions', () => {
+	it('the doctor step starts the Sync doctor', () => {
 		log.calls.length = 0;
-		const a = makePlugin({ refreshToken: 'r' });
-		const first = open(a.t);
-		for (let i = 0; i < 3; i++) first.el.button('Next')?.handlers.click?.();
-		first.el.button('Set up encryption...')?.handlers.click?.();
 		const b = makePlugin({ refreshToken: 'r' });
 		const second = open(b.t);
 		for (let i = 0; i < 5; i++) second.el.button('Next')?.handlers.click?.();
 		second.el.button('Run the Sync doctor')?.handlers.click?.();
-		expect(log.calls).toContain('encryption');
 		expect(log.calls).toContain('doctor');
+	});
+
+	describe('the encryption step advises beginners against it', () => {
+		const atEncryption = (settings: Record<string, unknown> = { refreshToken: 'r' }) => {
+			const p = makePlugin(settings);
+			const view = open(p.t);
+			for (let i = 0; i < 3; i++) view.el.button('Next')?.handlers.click?.();
+			return view;
+		};
+
+		it('shows the warning first, in a warning style', () => {
+			const { el } = atEncryption();
+			const warning = el.all().find((c) => c.cls.includes('ogd-tour-warning'));
+			expect(warning?.text).toBe('Beginners: do not turn this on. Skip this step.');
+			expect(el.all().filter((c) => c.tag === 'p')[0]?.cls).toContain('ogd-tour-warning');
+		});
+
+		it('"Skip this step" is the highlighted button, Next and the action button are not', () => {
+			const { el } = atEncryption();
+			expect(el.button('Skip this step')?.cls).toContain('mod-cta');
+			expect(el.button('Next')?.cls).not.toContain('mod-cta');
+			const action = el.button('Set up encryption (advanced)...');
+			expect(action?.cls).toContain('ogd-tour-quiet');
+			expect(action?.cls).not.toContain('mod-cta');
+		});
+
+		it('the advanced button asks first, with Cancel highlighted; nothing starts before "Continue"', () => {
+			log.calls.length = 0;
+			const { el } = atEncryption();
+			el.button('Set up encryption (advanced)...')?.handlers.click?.();
+			expect(log.calls).not.toContain('encryption');
+			const confirm = log.modals[log.modals.length - 1]?.contentEl as ElT;
+			expect(confirm.button('Cancel')?.cls).toContain('mod-cta');
+			expect(confirm.button('Continue (advanced)')?.cls).not.toContain('mod-cta');
+			confirm.button('Cancel')?.handlers.click?.();
+			expect(log.calls).not.toContain('encryption');
+			el.button('Set up encryption (advanced)...')?.handlers.click?.();
+			(log.modals[log.modals.length - 1]?.contentEl as ElT).button('Continue (advanced)')?.handlers.click?.();
+			expect(log.calls).toContain('encryption');
+		});
+
+		it('every other step keeps its normal buttons ("Next" highlighted)', () => {
+			const p = makePlugin({ refreshToken: 'r' });
+			const { el } = open(p.t);
+			for (const step of [0, 1, 2, 4, 5, 6]) {
+				// move to the step
+				const view = open(makePlugin({ refreshToken: 'r' }).t);
+				for (let i = 0; i < step; i++) view.el.button('Next')?.handlers.click?.();
+				expect(view.el.button('Next')?.cls).toContain('mod-cta');
+				expect(view.el.button('Skip this step')?.cls).not.toContain('mod-cta');
+				expect(view.el.all().some((c) => c.cls.includes('ogd-tour-warning'))).toBe(false);
+			}
+			expect(el.button('Next')?.cls).toContain('mod-cta');
+		});
 	});
 });
 

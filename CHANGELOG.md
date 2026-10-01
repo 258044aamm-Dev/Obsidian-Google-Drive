@@ -4,6 +4,14 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.7.2 - 2026-10-01
+
+### Changed
+- **Encryption is now clearly marked as an advanced option for beginners.** Wording and button emphasis only; encryption itself and syncing are unchanged.
+  - **Tour, encryption step:** starts with a bold warning ("Beginners: do not turn this on. Skip this step."), lists the risks (a lost passphrase cannot be recovered by anyone, a separate encrypted copy on Drive, the same passphrase on every device, no Drive preview or search), and says it can be turned on later. "Skip this step" is the highlighted button; the action button is quiet, is called "Set up encryption (advanced)..." and asks "This is for advanced users" first, with Cancel highlighted.
+  - **Settings, End-to-end encryption (when off):** starts with "Advanced option: if you are a beginner, leave this off."
+  - **"Turn on end-to-end encryption" window:** a warning at the top and a box "I understand that nobody can recover my notes without the passphrase." that must be ticked before "Turn on" works. The unlock, change-passphrase and turn-off windows are unchanged.
+
 ## 3.7.1 - 2026-10-01
 
 ### Fixed

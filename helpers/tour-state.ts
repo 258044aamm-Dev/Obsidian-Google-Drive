@@ -36,6 +36,8 @@ export interface TourStep {
 	actions?: TourAction[];
 	/** Show the three "what syncs" switches in this step. */
 	switches?: boolean;
+	/** A bold warning shown first. When set, "Skip this step" is the highlighted choice and the action buttons are quiet. */
+	warning?: string;
 }
 
 export interface TourState {
@@ -89,12 +91,13 @@ export const TOUR_STEPS: TourStep[] = [
 	{
 		id: 'encryption',
 		title: 'End-to-end encryption (optional)',
+		warning: 'Beginners: do not turn this on. Skip this step.',
 		paragraphs: [
-			'With encryption on, notes and their names are encrypted on your device before they reach Google Drive. Drive\'s website cannot read them.',
-			'You choose a passphrase. If you lose it, nobody can recover the notes. Turn it on on your main device first, then on the others with the same passphrase.',
-			'It starts a NEW encrypted vault next to the current one. If you are not sure, skip this step: you can turn it on later in the settings.',
+			'With encryption on, notes and their names are encrypted on your device before they reach Google Drive.',
+			'Risks: if you lose the passphrase, your notes cannot be recovered by anyone, including the plugin author and Google. It creates a separate encrypted copy of your vault on Drive. Every device needs the same passphrase. Google Drive\'s web preview and search can no longer read your notes.',
+			'You can turn it on later in the settings, once you are comfortable with the sync.',
 		],
-		actions: [{ id: 'encryption', label: 'Set up encryption...' }],
+		actions: [{ id: 'encryption', label: 'Set up encryption (advanced)...' }],
 	},
 	{
 		id: 'daily',

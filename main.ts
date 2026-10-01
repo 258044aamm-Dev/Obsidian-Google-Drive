@@ -976,7 +976,7 @@ class SettingsTab extends PluginSettingTab {
 					const locked = on && !this.plugin.e2ee;
 					const description = (
 						!on
-							? 'Off. Turn it on to keep your notes and their names encrypted on Google Drive with a passphrase that only you know. It starts a NEW encrypted vault next to your current one. Do it on your main device first, then on the others.'
+							? 'Off. Advanced option: if you are a beginner, leave this off. Turn it on to keep your notes and their names encrypted on Google Drive with a passphrase that only you know. It starts a NEW encrypted vault next to your current one. Do it on your main device first, then on the others.'
 							: locked
 								? 'On, but this device does not have the key. Sync is paused until you enter the passphrase.'
 								: 'On. Notes and their names are encrypted on this device before they reach Google Drive. Google Drive\'s web preview and search cannot read them. If you lose the passphrase, nobody can recover the notes.'

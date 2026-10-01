@@ -40,7 +40,7 @@ The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
 ## What is new in 3.6.0: end-to-end encryption (optional)
 
-With encryption on, your notes and their **file and folder names** are encrypted on your device before they go to Google Drive. Drive stores random names and unreadable data. It is **off by default**; nothing changes unless you turn it on in *Settings > Google Drive Sync > End-to-end encryption*.
+With encryption on, your notes and their **file and folder names** are encrypted on your device before they go to Google Drive. Drive stores random names and unreadable data. **It is an advanced option: if you are a beginner, leave it off** (a lost passphrase cannot be recovered by anyone; the tour and the *Turn on...* window say so too). It is **off by default**; nothing changes unless you turn it on in *Settings > Google Drive Sync > End-to-end encryption*.
 
 **How to switch (desktop first):**
 

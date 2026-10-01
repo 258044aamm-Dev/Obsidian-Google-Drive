@@ -1,4 +1,4 @@
-import { FloatingBadge, type FloatPos } from './helpers/floating-badge';
+import { HeaderButton } from './helpers/header-button';
 import { advancedSettingGroup, isAdvancedOpen } from './helpers/advanced';
 import { countIgnoredFiles, dropIgnoredMarks, isIgnored } from './helpers/ignore';
 import { checkConnection, checkDriveHost, getDriveClient, unSplitPath } from './helpers/drive';
@@ -70,10 +70,8 @@ interface PluginSettings {
 	pullBadge?: boolean;
 	/** Files and folders sync leaves alone: one pattern per line (see helpers/ignore.ts). */
 	ignorePatterns?: string;
-	/** The floating Push/Pull button on phones: on unless this is false. */
-	floatingBadge?: boolean;
-	/** Where the user dragged it to (see helpers/floating-badge.ts). */
-	floatingBadgePos?: FloatPos;
+	/** The Drive icon in the note header on phones: on unless this is false. */
+	headerButton?: boolean;
 	syncConfigFiles?: boolean;
 	/** Sync the themes in the configuration folder. On unless explicitly false. */
 	syncThemes?: boolean;
@@ -130,8 +128,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 	pullRibbonIcon?: HTMLElement;
 	/** Changes waiting on Google Drive, as last counted (only while the opt-in check is on). */
 	waitingOnDrive?: number;
-	/** The floating Push/Pull button (phones and tablets only). */
-	floating?: FloatingBadge;
+	/** The Drive icon in the note header (phones and tablets only). */
+	header?: HeaderButton;
 	private migrationChecked = false;
 	syncing!: boolean;
 	/** the visibility listener is registered (onload can run again after a token is added) */
@@ -205,8 +203,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 		// Status bar button (desktop only): pending count and a menu of actions.
 		this.statusBar?.remove();
 		this.statusBar = installStatusBar(this);
-		this.floating?.destroy();
-		this.floating = new FloatingBadge(
+		this.header?.destroy();
+		this.header = new HeaderButton(
 			this,
 			{
 				onPush: () => {
@@ -218,6 +216,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 			},
 			{ isMobile: Platform.isMobile },
 		);
+		this.header.start();
 		this.updateBadges();
 
 		// Push, Pull and the rest of the commands (the list is in helpers/commands.ts).
@@ -309,7 +308,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	onunload() {
-		this.floating?.destroy();
+		this.header?.destroy();
 		releaseScreen(this);
 		this.clearAutoPushTimer();
 		void this.saveSettings();
@@ -340,7 +339,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 	/** Counts on the two ribbon icons (see helpers/badge.ts). */
 	updateBadges(busy?: boolean) {
-		this.floating?.update(busy);
+		this.header?.update(busy);
 		if (this.settings.pullBadge !== true) this.waitingOnDrive = undefined;
 		const show = this.settings.ribbonBadges !== false;
 		const pending = show ? Object.keys(this.settings.operations).length : 0;
@@ -969,31 +968,16 @@ class SettingsTab extends PluginSettingTab {
 					defaultValue: false,
 				},
 			},
-			// phones and tablets only: the ribbon is hidden there, so the counts get a button of their own
+			// phones and tablets only: the ribbon is hidden there, so Push and Pull get an icon in the note header
 			...(Platform.isMobile
 				? [
 						{
-							name: 'Show a floating button',
-							desc: 'A small button on the screen that shows how many changes are waiting on this device (up arrow: tap to Push) and, with the Drive check above, on Google Drive (down arrow: tap to Pull). It only shows when something is waiting, and hides while you type. Press and hold it, then drag to move it.',
+							name: 'Show a Drive icon in the note header',
+							desc: 'A small icon next to the three-dots button at the top of every note. Tap it to choose Push or Pull. A number on it says how many changes are waiting (on this device and, with the Drive check above, on Google Drive).',
 							control: {
 								type: 'toggle' as const,
-								key: 'floatingBadge',
+								key: 'headerButton',
 								defaultValue: true,
-							},
-						},
-						{
-							name: 'Position of the floating button',
-							render: (setting: { settingEl: HTMLElement }) => {
-								const row = renderRow(
-									setting,
-									'Position of the floating button',
-									'Put it back at the bottom-right.',
-								);
-								const btn = row.createEl('button', { text: 'Reset position' });
-								btn.addEventListener('click', () => {
-									this.plugin.floating?.resetPosition();
-									new Notice('The floating button is back at the bottom-right.');
-								});
 							},
 						},
 					]
@@ -1223,7 +1207,7 @@ class SettingsTab extends PluginSettingTab {
 				this.plugin.debouncedSaveSettings();
 			}
 		}
-		if (key === 'ribbonBadges' || key === 'floatingBadge') this.plugin.updateBadges();
+		if (key === 'ribbonBadges' || key === 'headerButton') this.plugin.updateBadges();
 		if (key === 'pullBadge') {
 			this.plugin.updateBadges();
 			if (value) void refreshWaitingBadge(this.plugin);

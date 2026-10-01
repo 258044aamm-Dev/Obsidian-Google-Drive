@@ -136,7 +136,6 @@ export class Plugin {
 	}
 	registerEvent() {}
 	/** Timers must not keep the test process alive. */
-	registerDomEvent() {}
 	registerInterval(id: any) {
 		id?.unref?.();
 		return id;

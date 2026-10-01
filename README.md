@@ -29,7 +29,11 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
-## What is new in 3.11.0: a floating button on phones
+## What is new in 3.12.0: a Drive icon in the note header on phones
+
+The floating button of 3.11.0 is gone. Instead, phones and tablets get a small **Drive icon in the header of every note**, next to the three-dots button (to the left of it, beside the other note icons). You do not have to open any menu to see it. Tap it and a small menu opens with **Push** and **Pull**: both are always there and you choose. A number on the icon shows how many changes are waiting (on this phone, plus on Google Drive when *Check Google Drive for waiting changes* is on), and it turns during a sync. Switch it off under **Advanced**. Never shown on a desktop.
+
+## What is new in 3.11.0: a floating button on phones (replaced in 3.12.0)
 
 On a phone the ribbon is hidden in a menu, so the numbers on the Push and Pull icons were out of sight. A small button now stays on the screen: **up arrow and a number** = changes on this phone that Google Drive does not have yet (tap to Push); **down arrow and a number** = changes waiting on Google Drive (tap to Pull; needs *Check Google Drive for waiting changes*). It appears only when something is waiting, hides while you type, and shows a turning arrow during a sync. Press and hold, then drag to move it; it snaps to a side and remembers the place. Switch it off or reset its position under **Advanced**. Phones and tablets only.
 

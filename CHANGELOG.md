@@ -4,6 +4,22 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.12.0 - 2026-10-01
+
+### Changed
+- **On phones and tablets the 3.11.0 floating button is replaced by a Drive icon in the note header, next to the three-dots button.** The floating button only showed Push when this device had changes, and Pull only with the Drive check on, so often there was just one choice. The new icon is always there, with no menu to open first:
+  - **Tap it and a small menu opens with Push and Pull.** Both are always offered, and you pick either one. They do exactly what the Push and Pull icons in the ribbon do. The menu rows say how many changes are waiting when that is known (on this device, and on Google Drive with **Check Google Drive for waiting changes**).
+  - **A small number on the icon** shows how many changes are waiting: the ones on this device plus the ones known to wait on Google Drive. It has no number when nothing is waiting, and it follows **Show counts on the ribbon icons**. While a sync runs the icon turns and the menu rows are greyed out.
+  - Obsidian puts a header icon directly to the left of the three-dots button, beside the existing icons of the note (such as reading view). It cannot go to the right of the three dots without workarounds that break with Obsidian updates.
+  - On by default on phones and tablets, never on a desktop. The Advanced settings have **Show a Drive icon in the note header** to turn it off; on a desktop that setting is not shown.
+
+### Removed
+- The floating button and its two settings (**Show a floating button** and **Reset position**). The stored `floatingBadge` and `floatingBadgePos` values are no longer read; they do no harm and nothing needs to be reset.
+
+### Notes
+- Push, Pull, the pending list and the ribbon counts are unchanged.
+- Not verified on a real phone: how the icon looks in your theme and how the menu looks on a touch screen. Tests cover the icon in every open view, the number, the menu, the busy state, the switch and the removal on unload.
+
 ## 3.11.0 - 2026-10-01
 
 ### Added

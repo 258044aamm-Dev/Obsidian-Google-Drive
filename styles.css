@@ -191,3 +191,24 @@
 .spin > .ogd-badge {
 	display: none;
 }
+
+/* The card of a folded settings section (3.10.3): the whole card opens it */
+.ogd-fold-card {
+	cursor: pointer;
+}
+
+.ogd-fold-card:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.ogd-fold-card:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+.ogd-fold-card .setting-item-control::after {
+	content: '\203A';
+	font-size: 1.8em;
+	line-height: 1;
+	color: var(--text-muted);
+}

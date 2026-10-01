@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.10.3: the whole folded card opens it
+
+In the settings, the folded **Advanced** and **Commands** sections now show a card that says what is inside. Click or tap anywhere on it to open the section (Enter or Space on the keyboard). The arrow in the heading still opens and closes it.
+
 ## What is new in 3.10.2: an Advanced section in the settings
 
 The settings page now shows only what is needed to connect and sync. Everything else (ribbon counts, ignore list, which settings files sync, version history, encryption, connection settings, diagnostics and the Commands) is under **Advanced**, which starts folded. Press its arrow to open it. No setting was changed or removed.

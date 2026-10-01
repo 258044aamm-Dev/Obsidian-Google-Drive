@@ -48,6 +48,7 @@ vi.mock('../helpers/history-ui', () => ({
 import {
 	PLUGIN_COMMANDS,
 	commandsInDisplayOrder,
+	COMMANDS_SUMMARY,
 	commandsSettingGroup,
 	isCommandsOpen,
 	setCommandsOpen,
@@ -78,7 +79,8 @@ class El {
 	classes = new Set<string>();
 	text = '';
 	disabled = false;
-	listeners: Record<string, (() => void)[]> = {};
+	listeners: Record<string, ((event?: { key: string; preventDefault: () => void }) => void)[]> = {};
+	attrs: Record<string, string> = {};
 	constructor(public tag = 'div') {}
 	empty() {
 		this.children = [];
@@ -100,11 +102,19 @@ class El {
 	addClass(c: string) {
 		this.classes.add(c);
 	}
-	addEventListener(type: string, fn: () => void) {
+	setAttribute(name: string, value: string) {
+		this.attrs[name] = value;
+	}
+	addEventListener(type: string, fn: (event?: { key: string; preventDefault: () => void }) => void) {
 		(this.listeners[type] ??= []).push(fn);
 	}
 	click() {
 		(this.listeners.click ?? []).forEach((fn) => fn());
+	}
+	key(key: string) {
+		const event = { key, preventDefault: vi.fn() };
+		(this.listeners.keydown ?? []).forEach((fn) => fn(event));
+		return event;
 	}
 	find(pred: (e: El) => boolean): El | undefined {
 		for (const c of this.children) {
@@ -346,7 +356,8 @@ describe('folding the Commands section', () => {
 		expect(isCommandsOpen()).toBe(false);
 		const { group, state } = header();
 		expect(group.heading).toBe('Commands');
-		expect(group.items).toEqual([]);
+		expect(group.items).toHaveLength(1);
+		expect((group.items![0] as SettingDefinition).name).toBe('Commands');
 		expect(group.search).toBeUndefined();
 		expect(state.icon).toBe('chevron-right');
 		expect(state.tip).toBe('Show the commands');
@@ -377,5 +388,44 @@ describe('folding the Commands section', () => {
 		const rows = group.items!.slice(1) as unknown as Row[];
 		expect(rows.map((r) => r.aliases[0]).sort()).toEqual(PLUGIN_COMMANDS.map((c) => c.id).sort());
 		expect(rows.filter((r) => group.search!.match(r, 'doctor')).map((r) => r.aliases[0])).toContain('sync-doctor');
+	});
+});
+
+describe('the folded Commands card', () => {
+	const card = (redraw = () => {}) => {
+		setCommandsOpen(false);
+		const group = commandsSettingGroup(plugin(), redraw);
+		const settingEl = new El();
+		(group.items![0] as unknown as Row).render({ settingEl });
+		return { settingEl };
+	};
+
+	it('says what is inside and is a button as a whole', () => {
+		const { settingEl } = card();
+		expect(settingEl.find((e) => e.classes.has('setting-item-name'))?.text).toBe('Commands');
+		expect(settingEl.find((e) => e.classes.has('setting-item-description'))?.text).toBe(COMMANDS_SUMMARY);
+		expect(settingEl.classes.has('ogd-fold-card')).toBe(true);
+		expect(settingEl.attrs).toMatchObject({ role: 'button', tabindex: '0', 'aria-expanded': 'false' });
+	});
+
+	it('a click anywhere on the card unfolds the section and draws the page again', () => {
+		const redraw = vi.fn();
+		const { settingEl } = card(redraw);
+		settingEl.click();
+		expect(isCommandsOpen()).toBe(true);
+		expect(redraw).toHaveBeenCalledTimes(1);
+	});
+
+	it('Enter and Space unfold it from the keyboard; other keys do nothing', () => {
+		const redraw = vi.fn();
+		const { settingEl } = card(redraw);
+		expect(settingEl.key('a').preventDefault).not.toHaveBeenCalled();
+		expect(redraw).not.toHaveBeenCalled();
+		expect(settingEl.key('Enter').preventDefault).toHaveBeenCalled();
+		expect(redraw).toHaveBeenCalledTimes(1);
+		setCommandsOpen(false);
+		settingEl.key(' ');
+		expect(redraw).toHaveBeenCalledTimes(2);
+		expect(isCommandsOpen()).toBe(true);
 	});
 });

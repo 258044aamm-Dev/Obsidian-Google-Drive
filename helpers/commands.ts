@@ -12,7 +12,7 @@ import type { SettingDefinition, SettingDefinitionGroup } from 'obsidian';
 import type ObsidianGoogleDrive from '../main';
 import { runCompareActiveNote } from './compare-note-command';
 import { runSyncDoctor } from './doctor-command';
-import { foldButton } from './fold';
+import { foldButton, foldedCard } from './fold';
 import { fixDrivePath } from './fix_drive_path';
 import { createRestorePointNow, startVaultRestore } from './history-ui';
 import { pull } from './pull';
@@ -259,9 +259,12 @@ export const setCommandsOpen = (open: boolean) => {
 	commandsOpen = open;
 };
 
+export const COMMANDS_SUMMARY =
+	'Every command of this plugin with a Run button and a search box: sync, checks, version history, repair and help. Handy on a phone.';
+
 /**
  * The "Commands" section of the settings page: a searchable list, one row per command.
- * Folded, it is only the heading with a button; unfolded, the search box and the rows appear.
+ * Folded, it is the heading and one card (clickable as a whole); unfolded, the search box and the rows appear.
  * `redraw` draws the settings page again after the button was pressed.
  */
 export const commandsSettingGroup = (
@@ -269,15 +272,16 @@ export const commandsSettingGroup = (
 	redraw: () => void = () => {},
 ): SettingDefinitionGroup => {
 	const open = commandsOpen;
+	const toggle = () => {
+		commandsOpen = !commandsOpen;
+		redraw();
+	};
 	return {
 		type: 'group',
 		heading: 'Commands',
 		cls: 'ogd-commands',
 		extraButtons: [
-			foldButton(open, 'the commands', () => {
-				commandsOpen = !commandsOpen;
-				redraw();
-			}),
+			foldButton(open, 'the commands', toggle),
 		],
 		...(open && {
 			search: {
@@ -289,7 +293,7 @@ export const commandsSettingGroup = (
 					),
 			},
 		}),
-		items: open ? commandItems(t) : [],
+		items: open ? commandItems(t) : [foldedCard('Commands', COMMANDS_SUMMARY, toggle)],
 	};
 };
 

@@ -4,6 +4,11 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.10.3 - 2026-10-01
+
+### Changed
+- **A folded section is one big button.** The folded **Advanced** section and the folded **Commands** section each show a card below their heading that says what is inside (Commands used to show nothing there). Click or tap anywhere on the card to open the section; with the keyboard, focus the card and press Enter or Space. The small arrow next to the heading still works, and it is what closes an open section. Nothing else changed.
+
 ## 3.10.2 - 2026-10-01
 
 ### Changed

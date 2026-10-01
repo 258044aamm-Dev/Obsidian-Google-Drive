@@ -6,12 +6,14 @@ describe('the Advanced section', () => {
 		expect(isAdvancedOpen()).toBe(false);
 	});
 
-	it('folded, it holds one line that says what is behind the arrow; unfolded, the given rows', () => {
+	it('folded, it holds one card that says what is behind the arrow; unfolded, the given rows', () => {
 		const rows = [{ name: 'A' }, { name: 'B' }];
 		setAdvancedOpen(false);
 		const folded = advancedSettingGroup(rows);
 		expect(folded.heading).toBe('Advanced');
-		expect(folded.items).toEqual([{ name: 'Advanced settings', desc: ADVANCED_SUMMARY }]);
+		expect(folded.items).toHaveLength(1);
+		expect(folded.items![0]).toMatchObject({ name: 'Advanced settings', desc: ADVANCED_SUMMARY });
+		expect(typeof (folded.items![0] as { render?: unknown }).render).toBe('function'); // the card is a button as a whole
 		setAdvancedOpen(true);
 		expect(advancedSettingGroup(rows).items).toEqual(rows);
 		setAdvancedOpen(false);

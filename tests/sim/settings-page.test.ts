@@ -114,7 +114,8 @@ describe('the settings page', () => {
 		expect(advancedNames).not.toContain('Advanced settings');
 		// the commands follow, still folded
 		expect(commands!.heading).toBe('Commands');
-		expect(commands!.items).toEqual([]);
+		expect(commands!.items).toHaveLength(1); // only its card
+		expect((commands!.items![0] as SettingDefinition).name).toBe('Commands');
 	});
 
 	it('every setting is in exactly one place (nothing lost, nothing twice)', async () => {
@@ -139,5 +140,31 @@ describe('the settings page', () => {
 		press(groups(tab.getSettingDefinitions())[1]!).click!();
 		const [, commands] = groups(tab.getSettingDefinitions());
 		expect(commands!.items!.length).toBeGreaterThan(1);
+	});
+
+	it('the folded Advanced card opens it with a click anywhere or with Enter', async () => {
+		const { tab, isAdvancedOpen, setAdvancedOpen } = await open();
+		const fake = () => {
+			const listeners: Record<string, ((e?: unknown) => void)[]> = {};
+			const el: Record<string, unknown> = {
+				empty: () => undefined,
+				createDiv: () => fake(),
+				addClass: () => undefined,
+				setAttribute: () => undefined,
+				addEventListener: (type: string, fn: (e?: unknown) => void) => (listeners[type] ??= []).push(fn),
+				fire: (type: string, e?: unknown) => (listeners[type] ?? []).forEach((fn) => fn(e)),
+			};
+			return el as { fire: (type: string, e?: unknown) => void } & Record<string, unknown>;
+		};
+		const draw = () => {
+			const settingEl = fake();
+			(groups(tab.getSettingDefinitions())[0]!.items![0] as unknown as { render: (s: unknown) => void }).render({ settingEl });
+			return settingEl;
+		};
+		draw().fire('click');
+		expect(isAdvancedOpen()).toBe(true);
+		setAdvancedOpen(false);
+		draw().fire('keydown', { key: 'Enter', preventDefault: () => undefined });
+		expect(isAdvancedOpen()).toBe(true);
 	});
 });

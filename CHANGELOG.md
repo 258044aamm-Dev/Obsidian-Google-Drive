@@ -4,6 +4,12 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.13.2 - 2026-10-01
+
+### Fixed
+- **"HTTP 403 - Insufficient Google Drive permissions" when turning on "Check Google Drive for waiting changes".** The check that fills the number on the Pull icon (3.9.0) asked Google Drive without signing in first. Pull and Push sign in first, so they were fine, but on a device that had not yet pulled or pushed since Obsidian started (for example with "Pull when Obsidian starts" off) the check went out unsigned and Google refused it with a 403 and the misleading advice to re-authorize. The check now signs in first, like Pull and Push. Your permissions and token were never the problem. The same message could have appeared again at every start, 10 seconds in, and every 15 minutes, for anyone with the check on.
+- The check also stays quiet when the device is offline (no repeated notice).
+
 ## 3.13.1 - 2026-10-01
 
 ### Fixed

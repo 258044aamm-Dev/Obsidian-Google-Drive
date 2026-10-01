@@ -13,6 +13,7 @@ import { isOwnPluginPath } from './own-plugin';
 import { countRemoteChanges, type RemoteChange } from './push-guard';
 import { findUnseenChanged, lastChangePerFile } from './restored';
 import { isOwnUpload } from './sync-state';
+import { refreshAccessToken } from './requests';
 import { addTrashedAsRemoved } from './trash';
 
 /** How often Drive is asked, once the opt-in check is on. */
@@ -111,6 +112,12 @@ export const refreshWaitingBadge = async (t: ObsidianGoogleDrive) => {
 	if (t.settings.pullBadge !== true || t.settings.ribbonBadges === false) return;
 	if (t.syncing) return;
 	if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+	// no internet: nothing to ask, and no repeated notice about it
+	if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+	// Pull and Push get an access token first. Without one the request goes out unsigned and Google answers
+	// "403 Insufficient permissions" (3.9.0 to 3.13.1: the check failed this way until a Pull or Push had run).
+	if (!t.accessToken.token && !(await refreshAccessToken(t))) return;
+	if (t.syncing) return;
 	const count = await countWaitingOnDrive(t);
 	if (count === undefined || t.syncing) return; // keep what was shown
 	t.waitingOnDrive = count;

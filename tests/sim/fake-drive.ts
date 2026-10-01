@@ -226,6 +226,14 @@ export class FakeDrive {
 				return { status: f.status, text: 'injected failure', json: {} };
 			}
 		}
+		// the token service of the plugin's default sign-in (a custom client uses oauth2.googleapis.com instead)
+		if (url.hostname === 'ogd-server.richardxiong.com' && path === '/api/access') {
+			return ok({ access_token: 'tok', expires_in: 3600 });
+		}
+		// like Google: a Drive request without a token is refused with 403
+		if (url.hostname === 'www.googleapis.com' && !req.headers?.Authorization) {
+			return { status: 403, text: 'Daily Limit for Unauthenticated Use Exceeded. Continued use requires signup.', json: {} };
+		}
 		if (url.hostname === 'oauth2.googleapis.com' && path === '/tokeninfo') {
 			if (this.tokenInfoStatus !== 200) return { status: this.tokenInfoStatus, text: '', json: {} };
 			return ok({ scope: this.grantedScope, expires_in: '3599' });

@@ -4,6 +4,16 @@ import { E2eeError, requireUnlocked } from './e2ee';
 import { isOwnPluginPath } from './own-plugin';
 import { recordOwnUpload } from './sync-state';
 import { isCategoryEnabled, THEME_FILES } from './config-scope';
+import {
+	DriveHttpError,
+	isNetworkError,
+	isRetryableError,
+	net,
+	noteRetry,
+	retryDelay,
+	sleep,
+	withTimeout,
+} from './net-retry';
 import { Notice, requestUrl, TAbstractFile, TFolder } from 'obsidian';
 
 export interface FileMetadata {
@@ -274,6 +284,62 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		);
 	};
 
+	/**
+	 * Makes a file or folder, and survives a failure that comes from the connection or from Google.
+	 * A create is not simply repeated (the first one may have got through and only its answer was
+	 * lost, which would make a duplicate): after the wait, Drive is asked whether the item exists
+	 * already. If it does, that one is used; only if it does not is the create repeated. If Drive
+	 * cannot be asked, the original failure is reported and nothing is repeated.
+	 */
+	const retryCreate = async <R extends { id: string; modifiedTime?: string }>(
+		what: string,
+		attempt: () => Promise<R>,
+		lookup: { path: string; parent: string } | undefined,
+		adopt?: (found: { id: string; modifiedTime?: string }) => Promise<R>,
+	): Promise<R> => {
+		for (let tries = 0; ; tries++) {
+			try {
+				return await attempt();
+			} catch (error) {
+				const wait =
+					lookup && isRetryableError(error)
+						? retryDelay(
+								t,
+								tries,
+								error instanceof DriveHttpError ? error.retryAfter : undefined,
+							)
+						: undefined;
+				if (wait === undefined || !lookup) throw error;
+				noteRetry(t, what, tries, wait, error);
+				await sleep(wait);
+				const look = async () => {
+					const files = await searchFiles({
+						matches: [{ properties: splitPath(lookup.path), parent: lookup.parent }],
+						include: ['id', 'modifiedTime'],
+					});
+					if (!files) throw error;
+					return files[0];
+				};
+				let found: { id: string; modifiedTime?: string } | undefined;
+				try {
+					found = await look();
+					// Drive's search can lag a moment behind a create: after a lost answer look twice.
+					if (!found && isNetworkError(error)) {
+						await sleep(net.settleMs);
+						found = await look();
+					}
+				} catch {
+					throw error; // cannot tell whether it exists: do not risk a duplicate
+				}
+				if (found) {
+					return adopt
+						? adopt(found)
+						: ({ id: found.id, modifiedTime: found.modifiedTime } as R);
+				}
+			}
+		}
+	};
+
 	const persistRootFolderId = async (id: string) => {
 		if (t.settings.rootFolderId === id) return;
 		t.settings.rootFolderId = id;
@@ -340,24 +406,31 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 		if (!properties) properties = {};
 		if (!properties.vault) properties.vault = vaultValue();
+		const lookupPath = unSplitPath(properties);
 		const e = e2();
 		if (e) {
 			properties = await e.encodeProperties(properties);
 			if (properties.path) name = properties.path;
 		}
 
-		const folder = await drive
-			.post(`drive/v3/files?fields=id,modifiedTime`, {
-				json: {
-					name,
-					mimeType: folderMimeType,
-					description,
-					parents: [parent],
-					properties,
-					modifiedTime,
-				},
-			})
-			.json<{ id: string; modifiedTime?: string }>();
+		const folderProperties = properties;
+		const folder = await retryCreate(
+			'create folder',
+			() =>
+				drive
+					.post(`drive/v3/files?fields=id,modifiedTime`, {
+						json: {
+							name,
+							mimeType: folderMimeType,
+							description,
+							parents: [parent],
+							properties: folderProperties,
+							modifiedTime,
+						},
+					})
+					.json<{ id: string; modifiedTime?: string }>(),
+			lookupPath ? { path: lookupPath, parent } : undefined,
+		);
 		if (!folder) return;
 		recordOwnUpload(t, folder.id, folder.modifiedTime);
 		return folder.id;
@@ -379,6 +452,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		if (!metadata.properties.vault) {
 			metadata.properties.vault = vaultValue();
 		}
+		const lookupPath = unSplitPath(metadata.properties);
 		const e = e2();
 		if (e) {
 			const plainProperties = metadata.properties;
@@ -414,11 +488,33 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		);
 		form.append('file', file);
 
-		const result = await drive
-			.post(`upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime`, {
-				body: form,
-			})
-			.json<{ id: string; modifiedTime?: string }>();
+		const uploadParent = parent;
+		const result = await retryCreate(
+			'upload file',
+			() =>
+				drive
+					.post(`upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime`, {
+						body: form,
+					})
+					.json<{ id: string; modifiedTime?: string }>(),
+			lookupPath ? { path: lookupPath, parent: uploadParent } : undefined,
+			// the file that a lost create made: put this content into it (it may be an older copy)
+			async (found) => {
+				const again = new FormData();
+				again.append(
+					'metadata',
+					new Blob([JSON.stringify(metadata?.modifiedTime ? { modifiedTime: metadata.modifiedTime } : {})], {
+						type: 'application/json',
+					}),
+				);
+				again.append('file', file);
+				return drive
+					.patch(`upload/drive/v3/files/${found.id}?uploadType=multipart&fields=id,modifiedTime`, {
+						body: again,
+					})
+					.json<{ id: string; modifiedTime?: string }>();
+			},
+		);
 		if (!result) return;
 		recordOwnUpload(t, result.id, result.modifiedTime);
 
@@ -829,14 +925,37 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 export const checkConnection = async () => {
 	try {
-		const result = await requestUrl({
-			url: 'https://www.google.com/generate_204',
-			throw: false,
-		});
+		const result = await withTimeout(
+			requestUrl({
+				url: 'https://www.google.com/generate_204',
+				throw: false,
+			}),
+			net.probeTimeoutMs,
+		);
 		return result.status >= 200 && result.status < 300;
 	} catch {
 		return false;
 	}
+};
+
+/**
+ * Can this device reach Google's API servers (the ones Drive is on)? Any answer counts, even an
+ * error page: it proves the servers are reachable. Only a failed or timed-out request does not.
+ * It tells "no internet" apart from "Google is reachable but Drive is blocked" (firewall, VPN).
+ */
+export const checkDriveHost = async () => {
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			await withTimeout(
+				requestUrl({ url: 'https://www.googleapis.com/generate_204', throw: false }),
+				net.probeTimeoutMs,
+			);
+			return true;
+		} catch {
+			// try once more
+		}
+	}
+	return false;
 };
 
 export const batchAsync = async <T = unknown>(

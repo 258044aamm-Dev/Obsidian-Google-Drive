@@ -29,6 +29,14 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.8.0: a steadier connection
+
+- Requests to Google Drive have time limits and are retried a few times, quietly, when the connection is slow or Google is busy. After about a minute of trouble the sync stops and says so; nothing is lost and you can press the button again.
+- Files and folders are never created twice because an answer was lost: the plugin checks whether the file is already on Drive first.
+- If your internet works but Google Drive is blocked (firewall, VPN, filter), you are told before anything happens.
+- On a phone the screen is kept on during a sync, and you get a reminder if the app was in the background. Keep the screen open until the sync finishes; if it was interrupted, press the button again.
+- The Sync doctor shows how fast Google Drive answers.
+
 ## What is new in 3.7.0: themes and snippets, three switches, getting-started tour
 
 - **Themes and CSS snippets are synced** (`<config>/themes/<name>/theme.css` + `manifest.json`, and `<config>/snippets/*.css`), so the appearance setting finds its theme on every device. Other files in those folders are left alone.

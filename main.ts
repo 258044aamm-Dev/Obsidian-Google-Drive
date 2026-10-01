@@ -1,4 +1,6 @@
-import { checkConnection, getDriveClient, unSplitPath } from './helpers/drive';
+import { checkConnection, checkDriveHost, getDriveClient, unSplitPath } from './helpers/drive';
+import { resetRetryWindow } from './helpers/net-retry';
+import { KEEP_OPEN_NOTICE, holdScreenAwake, onVisibilityChange, releaseScreen } from './helpers/mobile-sync';
 import { refreshAccessToken } from './helpers/requests';
 import { pull } from './helpers/pull';
 import { push } from './helpers/push';
@@ -7,6 +9,7 @@ import {
 	App,
 	debounce,
 	Notice,
+	Platform,
 	Plugin,
 	PluginSettingTab,
 	type SettingDefinitionItem,
@@ -114,6 +117,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 	pullRibbonIcon?: HTMLElement;
 	private migrationChecked = false;
 	syncing!: boolean;
+	/** the visibility listener is registered (onload can run again after a token is added) */
+	private visibilityHooked = false;
 	autoPushTimer?: number;
 	/** Create / modify / delete / rename events seen since load (shown by the Sync doctor). */
 	vaultEventCount = 0;
@@ -134,6 +139,19 @@ export default class ObsidianGoogleDrive extends Plugin {
 		this.diagnostics.maskPaths = this.settings.maskFilePaths;
 
 		this.addSettingTab(new SettingsTab(this.app, this));
+
+		// A phone that was in the background during a sync: say so when it comes back.
+		if (!this.visibilityHooked && typeof document !== 'undefined') {
+			this.visibilityHooked = true;
+			this.registerDomEvent(document, 'visibilitychange', () => {
+				const message = onVisibilityChange(
+					this,
+					document.visibilityState === 'visible',
+					this.syncing === true,
+				);
+				if (message) new Notice(message, 10000);
+			});
+		}
 
 		// Available before the token is added too: it is how a new user gets started.
 		this.addCommand({
@@ -266,8 +284,10 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 				await this.ensureMigrated();
 
+				resetRetryWindow(this);
 				this.syncing = true;
 				this.setSpinning(true);
+				holdScreenAwake(this);
 				let autoSyncPhase: SyncPhase = 'auto-sync';
 				try {
 					autoSyncPhase = 'download';
@@ -304,6 +324,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	onunload() {
+		releaseScreen(this);
 		this.clearAutoPushTimer();
 		void this.saveSettings();
 		return;
@@ -514,9 +535,20 @@ export default class ObsidianGoogleDrive extends Plugin {
 			);
 			throw new Error('No internet connection');
 		}
+		// Online, but can Google's servers be reached (a firewall or VPN may block only those)?
+		if (!(await checkDriveHost())) {
+			new Notice(
+				'Your device is online, but Google Drive could not be reached. A firewall, VPN or network filter may be blocking it. Try again on another network or later.',
+				10000,
+			);
+			throw new Error('Google Drive unreachable');
+		}
+		resetRetryWindow(this);
 		this.clearAutoPushTimer();
 		this.setSpinning(true);
 		this.syncing = true;
+		holdScreenAwake(this);
+		if (Platform.isMobile) new Notice(KEEP_OPEN_NOTICE, 6000);
 		this.pulledConfigPaths = undefined;
 		return new Notice(`${operationName}...`, 0);
 	}
@@ -570,6 +602,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.saveSettings();
 		this.setSpinning(false);
 		this.syncing = false;
+		releaseScreen(this);
 		syncNotice?.hide();
 		this.resumeAutoPushIfNeeded();
 		return true;
@@ -579,6 +612,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		void this.saveLog(this.diagnostics.getEntries());
 		this.setSpinning(false);
 		this.syncing = false;
+		releaseScreen(this);
 		syncNotice?.hide();
 		this.resumeAutoPushIfNeeded();
 	}

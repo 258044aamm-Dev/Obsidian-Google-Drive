@@ -38,6 +38,8 @@ export interface DoctorEnvironment {
 	obsidianTrashOption?: string;
 	/** This device's clock minus Google's clock in milliseconds, or null when it could not be measured. */
 	clockSkewMs?: number | null;
+	/** How long one small request to Google took in milliseconds, or null when it failed. */
+	responseMs?: number | null;
 	/** Notes written after the last sync that are not in the pending list (not yet compared with Drive). */
 	unrecordedEdits?: string[];
 	/** How many create / modify / delete / rename events this plugin has seen since it was loaded. */
@@ -224,6 +226,13 @@ export const buildDoctorReport = (input: DoctorInput): DoctorReport => {
 		} else {
 			environmentLines.push('Clock check: this device agrees with Google (within a minute).');
 		}
+	}
+	if (env && env.responseMs !== undefined) {
+		environmentLines.push(
+			env.responseMs === null
+				? 'Connection: a small request to Google Drive failed. Check the internet connection, VPN or firewall.'
+				: `Connection: Google Drive answered in ${env.responseMs < 1000 ? `${Math.round(env.responseMs)} ms` : `${(env.responseMs / 1000).toFixed(1)} s`}${env.responseMs > 5000 ? ' (slow: large syncs may need several tries on this connection)' : ''}.`,
+		);
 	}
 	if (env && env.vaultEvents !== undefined) {
 		environmentLines.push(

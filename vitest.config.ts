@@ -5,6 +5,7 @@ export default defineConfig({
 		extensions: ['.ts', '.mts', '.js', '.mjs', '.json'],
 	},
 	test: {
+		setupFiles: ['./tests/setup-net.ts'],
 		clearMocks: true,
 		restoreMocks: true,
 	},

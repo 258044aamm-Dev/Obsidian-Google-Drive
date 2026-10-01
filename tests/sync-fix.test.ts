@@ -38,6 +38,7 @@ vi.mock('obsidian', () => {
 		Menu: class {},
 		Modal: class {},
 		Notice,
+		Platform: { isMobile: false },
 		Plugin: class {},
 		PluginSettingTab: class {},
 		Setting: class {},

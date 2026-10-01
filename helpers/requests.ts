@@ -1,6 +1,21 @@
 import type ObsidianGoogleDrive from '../main';
 import { Notice, requestUrl, RequestUrlResponse } from 'obsidian';
 import { sanitizeMessage, suggestAction } from './diagnostics';
+import {
+	DriveHttpError,
+	isRetryableStatus,
+	markNetworkError,
+	net,
+	noteRetry,
+	requestTimeoutFor,
+	retryDelay,
+	sleep,
+	withTimeout,
+} from './net-retry';
+
+/** A request that creates a file or folder: repeating it blindly could create a duplicate (see drive.ts). */
+const isCreateRequest = (method: string, path: string) =>
+	method === 'POST' && /^\/?(upload\/)?drive\/v3\/files(\?|$)/.test(path);
 
 interface RequestOptions {
 	body?: BodyInit;
@@ -84,14 +99,68 @@ export const getDriveAgent = (t: ObsidianGoogleDrive) => {
 					headers.Authorization = `Bearer ${t.accessToken.token}`;
 				}
 
-				const result = await requestUrl({
-					url: new URL(path, 'https://www.googleapis.com/').toString(),
-					method,
-					headers,
-					body,
-					contentType,
-					throw: false,
-				});
+				const url = new URL(path, 'https://www.googleapis.com/').toString();
+				const bytes =
+					body instanceof ArrayBuffer
+						? body.byteLength
+						: typeof body === 'string'
+							? body.length
+							: 0;
+				const timeoutMs = requestTimeoutFor(path, bytes);
+				// Reading, updating by id and deleting can be repeated safely. A create is never
+				// repeated here: drive.ts looks for what a lost create may have made first.
+				const mayRetry = !isCreateRequest(method, path);
+				let result: RequestUrlResponse;
+				let attempt = 0;
+				for (;;) {
+					try {
+						result = await withTimeout(
+							requestUrl({
+								url,
+								method,
+								headers,
+								body,
+								contentType,
+								throw: false,
+							}),
+							timeoutMs,
+						);
+					} catch (error) {
+						markNetworkError(error);
+						const wait = mayRetry ? retryDelay(t, attempt) : undefined;
+						if (wait === undefined) throw error;
+						noteRetry(t, `${method} ${path.split('?')[0]}`, attempt, wait, error);
+						await sleep(wait);
+						attempt++;
+						continue;
+					}
+					if (mayRetry && isRetryableStatus(result.status)) {
+						const wait = retryDelay(t, attempt, result.headers?.['retry-after']);
+						if (wait !== undefined) {
+							noteRetry(
+								t,
+								`${method} ${path.split('?')[0]}`,
+								attempt,
+								wait,
+								new DriveHttpError('', result.status),
+							);
+							await sleep(wait);
+							attempt++;
+							continue;
+						}
+					}
+					break;
+				}
+				// A repeated delete finds the file already gone when the first try did get through.
+				if (attempt > 0 && method === 'DELETE' && result.status === 404) {
+					return toDriveResponse({
+						status: 204,
+						headers: result.headers ?? {},
+						arrayBuffer: new ArrayBuffer(0),
+						json: undefined,
+						text: '',
+					});
+				}
 
 				if (result.status < 200 || result.status >= 300) {
 					const sanitized = sanitizeMessage(result.text);
@@ -109,8 +178,10 @@ export const getDriveAgent = (t: ObsidianGoogleDrive) => {
 						`${phaseLabel}HTTP ${result.status} — ${likelyCause}. ${suggestedAction}`,
 						8000,
 					);
-					throw new Error(
+					throw new DriveHttpError(
 						`Request failed with status ${result.status}: ${sanitized}`,
+						result.status,
+						result.headers?.['retry-after'],
 					);
 				}
 				return toDriveResponse(result);
@@ -158,7 +229,8 @@ export const refreshAccessToken = async (
 		const hasCustomClient = Boolean(
 			t.settings.clientId && t.settings.clientSecret,
 		);
-		const response = await requestUrl(
+		const response = await withTimeout(
+			requestUrl(
 			hasCustomClient
 				? {
 						url: 'https://oauth2.googleapis.com/token',
@@ -185,6 +257,8 @@ export const refreshAccessToken = async (
 						}),
 						throw: false,
 					},
+			),
+			net.timeoutMs,
 		);
 
 		if ([400, 401, 403].includes(response.status)) {

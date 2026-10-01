@@ -18,6 +18,7 @@ import { recordRestorePointAfterPush } from './history';
 import { recordMissedEdits } from './missed-edits';
 import { hashOf, recordSynced, recordSyncedFromDisk, stampOf } from './sync-state';
 import { isConfigPathSynced } from './config-scope';
+import { connectionHint } from './net-retry';
 import { verifySummary, verifyUploads } from './push-verify';
 import type { UploadedItem } from './push-verify';
 
@@ -754,12 +755,14 @@ export const push = async (
 			stack: error instanceof Error ? error.stack : undefined,
 		});
 		const pending = Object.keys(t.settings.operations).length;
+		const lost = connectionHint(error);
 		new Notice(
-			allUploaded
+			(allUploaded
 				? `Push failed during ${lastPhase}, after everything was uploaded (the connection may have dropped). Press Push again: nothing will be uploaded twice. Use "Copy diagnostics" for details.`
 				: uploaded.length || pending
 					? `Push failed during ${lastPhase}. ${uploaded.length} file${uploaded.length === 1 ? ' was' : 's were'} uploaded before it stopped and ${pending} change${pending === 1 ? ' is' : 's are'} still pending. Press Push again once the problem is fixed. Use "Copy diagnostics" for details.`
-					: `Push failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
+					: `Push failed during ${lastPhase}. Use "Copy diagnostics" for details.`) +
+				(lost ? ` ${lost} Press Push again when the connection is back.` : ''),
 			12000,
 		);
 		try {

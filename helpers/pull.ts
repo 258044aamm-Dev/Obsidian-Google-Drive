@@ -17,6 +17,7 @@ import {
 } from './folder-deletion';
 import { isOwnPluginPath } from './own-plugin';
 import { isConfigPathSynced } from './config-scope';
+import { connectionHint } from './net-retry';
 import { addTrashedAsRemoved } from './trash';
 import { sameBytes, saveConflictCopy } from './conflict-copy';
 import {
@@ -729,6 +730,14 @@ export const pull = async (
 				`Pull failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
 				8000,
 			);
+			// the cause was the connection: say so and that pressing Pull again is safe
+			const lost = connectionHint(error);
+			if (lost) {
+				new Notice(
+					`${lost} Nothing was lost: press Pull again when the connection is back.`,
+					10000,
+				);
+			}
 		}
 		console.error('Google Drive pull failed', error);
 		return false;

@@ -40,16 +40,21 @@ class DoctorModal extends Modal {
 }
 
 /** One small GET: compares this device's clock with the `Date` header Google answers with. Never throws. */
-const measureClockSkew = async (t: ObsidianGoogleDrive): Promise<number | null> => {
+const measureClockSkew = async (
+	t: ObsidianGoogleDrive,
+): Promise<{ skew: number | null; responseMs: number | null }> => {
 	try {
 		const sentAt = Date.now();
 		const response = await getDriveAgent(t).get('/drive/v3/changes/startPageToken');
 		const receivedAt = Date.now();
 		const headers = response.headers ?? {};
 		const key = Object.keys(headers).find((k) => k.toLowerCase() === 'date');
-		return clockSkewMs(sentAt, receivedAt, key ? headers[key] : undefined);
+		return {
+			skew: clockSkewMs(sentAt, receivedAt, key ? headers[key] : undefined),
+			responseMs: receivedAt - sentAt,
+		};
 	} catch {
-		return null;
+		return { skew: null, responseMs: null };
 	}
 };
 
@@ -93,7 +98,7 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 			return;
 		}
 		const { vault } = t.app;
-		const clockSkew = await measureClockSkew(t);
+		const { skew: clockSkew, responseMs } = await measureClockSkew(t);
 		const grantedScopes = await readGrantedScopes(t);
 		const localPaths = vault
 			.getAllLoadedFiles()
@@ -126,6 +131,7 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 					vault as unknown as { getConfig?: (key: string) => unknown }
 				).getConfig?.('trashOption') as string | undefined,
 				clockSkewMs: clockSkew,
+				responseMs,
 				unrecordedEdits: unrecordedEditCandidates(t),
 				vaultEvents: t.vaultEventCount,
 				grantedScopes,

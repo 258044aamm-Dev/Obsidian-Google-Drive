@@ -4,6 +4,28 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.8.0 - 2026-10-01
+
+### Added
+- **A slow or unstable connection no longer freezes or breaks a sync as easily.**
+  - **Time limits:** every request to Google Drive has a time limit (30 s for small requests, longer for uploads in proportion to their size, 2 minutes for downloads). A request that never answers is given up on instead of waiting for ever.
+  - **Quiet retries:** reading, updating by id and deleting are repeated up to 3 times (after about 1, 3 and 9 seconds) when Google answers 429, 500, 502, 503 or 504 or when the connection fails. `Retry-After` is honoured (at most 30 s). All retries of one sync together are limited to about one minute, after which the sync stops with the usual message. Refusals (400, 401, 403, 404 ...) are never retried.
+  - **Creating files and folders is never repeated blindly.** If the answer to a create is lost, the file may exist on Drive already. Before trying again the plugin looks for it (twice after a lost connection, with a short wait between) and uses it if it is there, so nothing is duplicated. If it cannot find out, it stops and reports the original problem. A delete that is repeated and finds the file already gone counts as done.
+  - **Clearer messages:** when a failure was the connection, the Push message adds "The connection to Google Drive was lost or too slow. ... Press Push again when the connection is back." (the existing text is unchanged), and a Pull shows one extra notice. Refusals from Google do not say this.
+  - **"Online, but Google Drive cannot be reached"**: before a Push, Pull or Reset the plugin also checks that `www.googleapis.com` answers. If a firewall, VPN or network filter blocks only Google, it says so and stops before doing anything.
+  - **Phones:** the screen is kept on while a sync runs (where the system allows it; released when the sync ends or fails), a notice asks to keep the screen open, and when the app comes back after more than 5 seconds in the background during a sync a notice says to press the button again if it did not finish. The plugin cannot stop the system from pausing the app; an interrupted sync is safe to repeat.
+  - **Sync doctor** shows a "Connection" line (how long one small request to Google took).
+  - Retries are recorded in the diagnostics.
+
+### Changed
+- Test suite: the simulated tests turn retries off by default (`tests/setup-net.ts`) because they inject single failures; one existing test (`tests/sync-fix.test.ts`) got `Platform` added to its mocked `obsidian` module. `NET_RETRY_ON=1 npx vitest run` runs everything with retries on: only one test then differs (a single injected 503 is now absorbed by a retry, which is the intended behaviour).
+
+### Notes
+- No change to the Drive format, to what is synced, or to existing messages (new text is only added).
+- Not changed: `requestUrl` cannot be cancelled, so a request given up on may still finish in the background; its answer is ignored. In rare cases Drive's search can lag behind a create, so after a lost answer a duplicate file is possible; the plugin looks twice to make this unlikely.
+- Not verified on a real device: behaviour on a phone with the screen locked, and the time limits on a very slow mobile connection.
+- Ignore paths and a large-file limit are still planned for a later release.
+
 ## 3.7.2 - 2026-10-01
 
 ### Changed

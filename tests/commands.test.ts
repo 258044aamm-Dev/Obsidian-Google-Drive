@@ -30,11 +30,13 @@ const actions = vi.hoisted(() => ({
 	runCompareActiveNote: vi.fn(),
 	createRestorePointNow: vi.fn(),
 	startVaultRestore: vi.fn(),
+	runRepairSyncMemory: vi.fn(),
 }));
 vi.mock('../helpers/tour', () => ({ openTour: actions.openTour }));
 vi.mock('../helpers/push', () => ({ push: actions.push }));
 vi.mock('../helpers/pull', () => ({ pull: actions.pull }));
 vi.mock('../helpers/reset', () => ({ reset: actions.reset }));
+vi.mock('../helpers/repair', () => ({ runRepairSyncMemory: actions.runRepairSyncMemory }));
 vi.mock('../helpers/fix_drive_path', () => ({ fixDrivePath: actions.fixDrivePath }));
 vi.mock('../helpers/doctor-command', () => ({ runSyncDoctor: actions.runSyncDoctor }));
 vi.mock('../helpers/compare-note-command', () => ({ runCompareActiveNote: actions.runCompareActiveNote }));
@@ -53,7 +55,7 @@ import {
 	runFromSettings,
 } from '../helpers/commands';
 
-/** The commands as they were registered before 3.8.2. They must not change: hotkeys depend on the ids. */
+/** The commands registered since 3.8.2 (3.8.3 added `repair-sync-memory`). They must not change: hotkeys depend on the ids. */
 const BEFORE_3_8_2: [string, string][] = [
 	['open-tour', 'Open the getting-started tour'],
 	['push', 'Push to Google Drive'],
@@ -66,6 +68,8 @@ const BEFORE_3_8_2: [string, string][] = [
 	['create-restore-point', 'Create a restore point now (version history)'],
 	['export-diagnostics', 'Copy sync diagnostics to clipboard'],
 ];
+const ADDED_3_8_3: [string, string][] = [['repair-sync-memory', 'Repair sync memory (keeps your notes)']];
+const ALL: [string, string][] = [...BEFORE_3_8_2, ...ADDED_3_8_3];
 
 class El {
 	children: El[] = [];
@@ -135,7 +139,7 @@ beforeEach(() => {
 
 describe('the command list', () => {
 	it('keeps every command id and name that existed before (hotkeys depend on them)', () => {
-		expect(PLUGIN_COMMANDS.map((c) => [c.id, c.name]).sort()).toEqual([...BEFORE_3_8_2].sort());
+		expect(PLUGIN_COMMANDS.map((c) => [c.id, c.name]).sort()).toEqual([...ALL].sort());
 	});
 
 	it('has unique ids, a description for each, and marks the data-changing ones', () => {
@@ -148,6 +152,7 @@ describe('the command list', () => {
 		expect(risk['compare-note-with-drive']).toBe('safe');
 		expect(risk['export-diagnostics']).toBe('safe');
 		expect(risk['push']).toBe('changes');
+		expect(risk['repair-sync-memory']).toBe('changes');
 	});
 
 	it('is the only place that registers commands', () => {
@@ -171,7 +176,7 @@ describe('registering with Obsidian', () => {
 		registerCommands(t, false);
 		expect(t.added.map((c) => c.id)).toEqual(['open-tour']);
 		registerCommands(t, true);
-		expect(t.added.map((c) => [c.id, c.name]).sort()).toEqual([...BEFORE_3_8_2].sort());
+		expect(t.added.map((c) => [c.id, c.name]).sort()).toEqual([...ALL].sort());
 	});
 
 	it('runs the same action as before when a command is used from the palette', async () => {
@@ -229,7 +234,7 @@ describe('the Commands section of the settings page', () => {
 		expect(shown('sync-doctor')).toEqual(['sync-doctor']);
 		expect(shown('restore')).toEqual(expect.arrayContaining(['restore-vault-history', 'create-restore-point']));
 		expect(shown('fix-drive-path')).toEqual(['fix-drive-path']);
-		expect(shown('repair').sort()).toEqual(['fix-drive-path', 'reset']);
+		expect(shown('repair').sort()).toEqual(['fix-drive-path', 'repair-sync-memory', 'reset']);
 		expect(shown('destructive').sort()).toEqual(['fix-drive-path', 'reset']);
 		expect(shown('no such command')).toEqual([]);
 	});

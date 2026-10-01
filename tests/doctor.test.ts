@@ -158,3 +158,25 @@ describe('false pending marks line (3.8.1)', () => {
 		expect(out).toMatch(/\(1, 2, 3, 4, 5, \.\.\.\)/);
 	});
 });
+
+describe('marks with no remembered state (3.8.3)', () => {
+	const text = (env: Record<string, unknown>) =>
+		renderReport(buildDoctorReport(base({ environment: env })));
+
+	it('points to Repair sync memory', () => {
+		const out = text({ unrememberedMarks: ['Bazar.md'] });
+		expect(out).toMatch(/1 note is marked as changed here, and this device remembers nothing about their last sync \(Bazar\.md\)/);
+		expect(out).toMatch(/Run "Repair sync memory"/);
+	});
+
+	it('says nothing when there are none or the check was not made', () => {
+		expect(text({ unrememberedMarks: [] })).not.toMatch(/remembers nothing/);
+		expect(text({})).not.toMatch(/remembers nothing/);
+	});
+
+	it('shortens a long list', () => {
+		const out = text({ unrememberedMarks: ['1', '2', '3', '4', '5', '6'] });
+		expect(out).toMatch(/6 notes are marked/);
+		expect(out).toMatch(/\(1, 2, 3, 4, 5, \.\.\.\)/);
+	});
+});

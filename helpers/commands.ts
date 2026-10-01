@@ -18,6 +18,7 @@ import { pull } from './pull';
 import { push } from './push';
 import { renderRow } from './settings-row';
 import { reset } from './reset';
+import { runRepairSyncMemory } from './repair';
 import { openTour } from './tour';
 
 /** safe: only reads or copies; changes: changes data on this device or Drive; destructive: replaces or clears data. */
@@ -88,6 +89,15 @@ export const PLUGIN_COMMANDS: PluginCommand[] = [
 		confirm:
 			'This rebuilds the saved Drive file list and clears the list of pending changes on this device. Changes that were not pushed yet are no longer remembered. Run the Sync doctor first if you are not sure. Continue?',
 		run: (t) => fixDrivePath(t),
+	},
+	{
+		id: 'repair-sync-memory',
+		name: 'Repair sync memory (keeps your notes)',
+		desc: 'For notes marked as changed that this device cannot judge (this is what makes "(Drive date)" copies appear every time). It checks each one against Drive, shows what it would do, and asks first. Nothing is deleted: a replaced note is kept as a copy.',
+		group: 'Repair',
+		risk: 'changes',
+		needsToken: true,
+		run: (t) => runRepairSyncMemory(t),
 	},
 	{
 		id: 'sync-doctor',

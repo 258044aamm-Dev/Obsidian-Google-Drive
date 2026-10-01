@@ -40,6 +40,8 @@ export interface DoctorEnvironment {
 	clockSkewMs?: number | null;
 	/** Notes marked as changed on this device that are exactly what they were at the last sync (false alarms). */
 	falseMarks?: string[];
+	/** Notes marked as changed on this device with no remembered synced state (Pull keeps a copy of Drive's version each time). */
+	unrememberedMarks?: string[];
 	/** How long one small request to Google took in milliseconds, or null when it failed. */
 	responseMs?: number | null;
 	/** Notes written after the last sync that are not in the pending list (not yet compared with Drive). */
@@ -233,6 +235,12 @@ export const buildDoctorReport = (input: DoctorInput): DoctorReport => {
 		const shown = env.falseMarks.slice(0, 5).join(', ');
 		environmentLines.push(
 			`Pending list: ${env.falseMarks.length} note${env.falseMarks.length === 1 ? ' is' : 's are'} marked as changed here but identical to the last sync (${shown}${env.falseMarks.length > 5 ? ', ...' : ''}). This is a false alarm: Pull takes the Drive version for them without making a "(Drive date)" copy.`,
+		);
+	}
+	if (env?.unrememberedMarks && env.unrememberedMarks.length > 0) {
+		const shown = env.unrememberedMarks.slice(0, 5).join(', ');
+		environmentLines.push(
+			`Pending list: ${env.unrememberedMarks.length} note${env.unrememberedMarks.length === 1 ? ' is' : 's are'} marked as changed here, and this device remembers nothing about their last sync (${shown}${env.unrememberedMarks.length > 5 ? ', ...' : ''}). A Pull cannot tell an edit from a false mark for them and keeps a "(Drive date)" copy each time. Run "Repair sync memory" (command palette or settings).`,
 		);
 	}
 	if (env && env.responseMs !== undefined) {

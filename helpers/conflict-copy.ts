@@ -13,6 +13,7 @@ export const conflictCopyPath = (
 	path: string,
 	date: string,
 	attempt = 1,
+	label = 'Drive',
 ) => {
 	const slash = path.lastIndexOf('/');
 	const folder = slash >= 0 ? path.slice(0, slash + 1) : '';
@@ -21,7 +22,7 @@ export const conflictCopyPath = (
 	const stem = dot > 0 ? name.slice(0, dot) : name;
 	const extension = dot > 0 ? name.slice(dot) : '';
 	const suffix = attempt <= 1 ? date : `${date}-${attempt}`;
-	return `${folder}${stem} (Drive ${suffix})${extension}`;
+	return `${folder}${stem} (${label} ${suffix})${extension}`;
 };
 
 export const sameBytes = (a: ArrayBuffer, b: ArrayBuffer) => {
@@ -47,12 +48,14 @@ export const saveConflictCopy = async (
 	path: string,
 	driveContent: ArrayBuffer,
 	now = new Date(),
+	/** `Drive` for the Drive version of a note; `this device` for this device's own version (see repair.ts). */
+	label = 'Drive',
 ): Promise<{ path: string; created: boolean }> => {
 	const { adapter } = t.app.vault;
 	const date = formatLocalDate(now);
 
 	for (let attempt = 1; attempt <= MAX_NUMBERED_COPIES; attempt++) {
-		const candidate = conflictCopyPath(path, date, attempt);
+		const candidate = conflictCopyPath(path, date, attempt, label);
 		if (!(await adapter.exists(candidate))) {
 			await t.createFile(candidate, driveContent);
 			// the copy is not on Drive: it must not count as "identical to Drive"
@@ -66,7 +69,7 @@ export const saveConflictCopy = async (
 	}
 
 	// Absurdly many different copies the same day: fall back to a unique name.
-	const unique = conflictCopyPath(path, `${date}-${now.getTime()}`);
+	const unique = conflictCopyPath(path, `${date}-${now.getTime()}`, 1, label);
 	await t.createFile(unique, driveContent);
 	forgetSynced(t, unique);
 	t.settings.operations[unique] = 'create';

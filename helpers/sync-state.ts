@@ -229,6 +229,29 @@ export const findFalseMarks = async (
 	return found.sort();
 };
 
+/**
+ * Notes marked `create` / `modify` that Drive knows and for which this device remembers nothing
+ * (no synced state at all): Pull cannot tell an edit from a false mark for them and keeps a copy
+ * every time. "Repair sync memory" settles them. Read-only.
+ */
+export const findUnrememberedMarks = (t: ObsidianGoogleDrive): string[] => {
+	const found: string[] = [];
+	try {
+		const { vault } = t.app;
+		for (const [path, operation] of Object.entries(t.settings.operations)) {
+			if (operation !== 'modify' && operation !== 'create') continue;
+			if (path === vault.configDir || path.startsWith(vault.configDir + '/')) continue;
+			if (isOwnPluginPath(t, path) || !knownToDrive(t, path)) continue;
+			if (t.settings.syncedFiles?.[path]) continue;
+			if (!vault.getFileByPath(path)) continue;
+			found.push(path);
+		}
+	} catch {
+		// nothing is reported when in doubt
+	}
+	return found.sort();
+};
+
 export const hasBaseline = (t: ObsidianGoogleDrive, path: string) =>
 	!!t.settings.syncedFiles?.[path];
 

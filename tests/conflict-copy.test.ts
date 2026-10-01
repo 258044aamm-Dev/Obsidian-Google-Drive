@@ -89,3 +89,10 @@ describe('saveConflictCopy', () => {
 		expect(result.path).toBe(`a/b (Drive 2026-09-30-${noon.getTime()}).md`);
 	});
 });
+
+describe('copy labels (3.8.3)', () => {
+	it('keeps "Drive" by default and can name this device\'s own version', () => {
+		expect(conflictCopyPath('F/Note.md', '2026-10-01')).toBe('F/Note (Drive 2026-10-01).md');
+		expect(conflictCopyPath('F/Note.md', '2026-10-01', 2, 'this device')).toBe('F/Note (this device 2026-10-01-2).md');
+	});
+});

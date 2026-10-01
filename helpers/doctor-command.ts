@@ -5,7 +5,7 @@ import { getDriveAgent, refreshAccessToken } from './requests';
 import { buildDoctorReport, clockSkewMs, parseScopes, renderReport } from './doctor';
 import { isOwnPluginPath } from './own-plugin';
 import { unrecordedEditCandidates } from './missed-edits';
-import { findFalseMarks } from './sync-state';
+import { findFalseMarks, findUnrememberedMarks } from './sync-state';
 
 class DoctorModal extends Modal {
 	constructor(
@@ -134,6 +134,7 @@ export const runSyncDoctor = async (t: ObsidianGoogleDrive) => {
 				clockSkewMs: clockSkew,
 				responseMs,
 				falseMarks: await findFalseMarks(t),
+				unrememberedMarks: findUnrememberedMarks(t),
 				unrecordedEdits: unrecordedEditCandidates(t),
 				vaultEvents: t.vaultEventCount,
 				grantedScopes,

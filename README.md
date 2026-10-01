@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.8.3: Repair sync memory
+
+If a note on a phone never updates and every Pull adds a "Note (Drive date).md" copy, run **Repair sync memory** (command palette or Settings → Commands). It checks the notes this device marks as changed against Drive, tells you what it would do, and asks. Notes the phone is simply behind on get Drive's version, and your old version is kept as "Note (this device date).md". Notes you really edited here are left alone. Nothing is deleted.
+
 ## What is new in 3.8.2: all commands on the settings page
 
 The settings page now has a **Commands** section: every command of this plugin with a **Run** button and a search box. Each one says whether it only reads, changes data, or is destructive (Reset and Fix Google Drive paths; both ask before they run). Use it when the command palette is awkward, for example on a phone. Nothing else changed.

@@ -4,6 +4,24 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.8.3 - 2026-10-01
+
+### Added
+- **Command "Repair sync memory (keeps your notes)"** (also in the settings list of commands). For a device that gets a "(Drive date)" copy at every Pull and whose note never updates.
+  - **Cause (confirmed on a real phone with "Compare with Google Drive"):** older versions marked every note a Pull wrote as "changed here", and a device that never pushes keeps those marks for ever. With no remembered synced state for such a note, Pull cannot tell an edit from a false mark, so it keeps your old note and saves Drive's version as a copy. Keeping your note means it is never downloaded, so the state is never recorded and the next Pull does the same.
+  - **What it does.** It looks at every note that is marked as changed here and that Drive knows (nothing else), shows what it would do, and asks first:
+    - unchanged since the last sync, or exactly the same as Drive: the mark is removed and the synced state is recorded;
+    - edited here since the last sync: kept as it is (Push uploads it);
+    - different from Drive and **older here than on Drive**: Drive's version replaces it, and your old version is saved next to it as `Note (this device DATE).md`, so nothing is lost;
+    - different from Drive and as new or newer here: kept as it is.
+  - A note you change while the window is open is left alone. Cancelling changes nothing. It does not move the position in Drive's change list, so the next Pull still gets everything.
+  - After the repair a Pull simply updates these notes (no more copies), because the device now remembers them.
+- **Sync doctor:** a "Pending list" line names the notes that are marked as changed with no remembered state, and points to the new command.
+
+### Notes
+- Pull, Push, the guard and the Drive format are unchanged. Copies named "(this device DATE)" are new files like any other: the next Push uploads them, so the other devices get them too. Delete the ones you do not need.
+- The choice between "older here" and "newer here" is made from the note's modified time on this device against Drive's, so a device clock that is wrong can send a note to the wrong side. Either way the version that is replaced is kept as a copy.
+
 ## 3.8.2 - 2026-10-01
 
 ### Added

@@ -49,6 +49,8 @@ export const pull = async (
 	}
 
 	let lastPhase: SyncPhase = 'auto-sync';
+	/** Set once this pull has registered the ids of incoming files; undoes that for files that never arrived. */
+	let takeBackUnarrived: (() => void) | undefined;
 
 	try {
 		const { vault } = t.app;
@@ -255,6 +257,18 @@ export const pull = async (
 					Object.entries(pathToId).map(([path, id]) => [id, path]),
 				),
 			};
+		};
+
+		// Ids are registered before their files are downloaded. If this pull stops half way, the
+		// ids of files that never reached this device must not stay: the next pull would read
+		// "known on Drive, absent here" as "deleted on this device".
+		const mapBeforePull = { ...t.settings.driveIdToPath };
+		takeBackUnarrived = () => {
+			recentlyModified.forEach(({ id, properties }) => {
+				if (mapBeforePull[id] !== undefined) return;
+				if (vault.getAbstractFileByPath(unSplitPath(properties))) return;
+				delete t.settings.driveIdToPath[id];
+			});
 		};
 
 		updateMap();
@@ -695,6 +709,7 @@ export const pull = async (
 		}
 		return ended;
 	} catch (error) {
+		takeBackUnarrived?.();
 		t.diagnostics.record({
 			phase: lastPhase,
 			operation: 'pull-unknown',

@@ -805,7 +805,17 @@ export const batchAsync = async <T = unknown>(
 	const results = [];
 	for (let i = 0; i < requests.length; i += batchSize) {
 		const batch = requests.slice(i, i + batchSize);
-		results.push(...(await Promise.all(batch.map((request) => request()))));
+		// Wait for every request of the batch to finish before reporting a failure. A failed
+		// batch must not leave other requests running in the background: they would keep
+		// changing files and state after the caller has already reported the failure.
+		const settled = await Promise.allSettled(batch.map((request) => request()));
+		const failed = settled.find(
+			(result): result is PromiseRejectedResult => result.status === 'rejected',
+		);
+		if (failed) throw failed.reason;
+		results.push(
+			...settled.map((result) => (result as PromiseFulfilledResult<T>).value),
+		);
 	}
 	return results;
 };

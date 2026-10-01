@@ -324,6 +324,16 @@ export const push = async (
 	const syncNotice = await t.startSync('Pushing to Google Drive');
 
 	let lastPhase: SyncPhase = 'upload';
+	/** Progress (pending list, id map, own uploads) is saved as the Push goes, so a stop or a restart keeps it. */
+	const persist = () => {
+		try {
+			t.debouncedSaveSettings();
+		} catch {
+			// best effort; the final save still happens
+		}
+	};
+	/** Set once every upload is done and the pending list is empty. */
+	let allUploaded = false;
 	/** Files this Push uploaded; a sample is checked on Drive at the end. */
 	const uploaded: UploadedItem[] = [];
 
@@ -411,6 +421,20 @@ export const push = async (
 			}),
 		);
 
+		// A delete whose Drive file is not known (for example one that an interrupted Push already
+		// deleted) has nothing left to do. Dropping it is the safe direction: Drive is not touched.
+		for (let i = deletes.length - 1; i >= 0; i--) {
+			const [path] = deletes[i] as [string, string];
+			if (pathsToIds[path]) continue;
+			delete t.settings.operations[path];
+			deletes.splice(i, 1);
+			t.diagnostics.record({
+				phase: 'batch-delete',
+				operation: 'delete-skipped',
+				message: 'A pending delete was dropped: its file is no longer known on Drive',
+			});
+		}
+
 		if (deletes.length) {
 			const idsToDelete = deletes.map(([path]) => {
 				const id = pathsToIds[path];
@@ -441,6 +465,9 @@ export const push = async (
 				return;
 			}
 			uniqueIds.forEach((id) => delete t.settings.driveIdToPath[id]);
+			// Done on Drive: forget the operations at the same moment as the ids.
+			deletes.forEach(([path]) => delete t.settings.operations[path]);
+			persist();
 
 			syncNotice.setMessage(
 				`Pushing... ${uniqueIds.length} file${uniqueIds.length === 1 ? '' : 's'} deleted`,
@@ -486,6 +513,8 @@ export const push = async (
 
 								t.settings.driveIdToPath[id] = folder.path;
 								pathsToIds[folder.path] = id;
+								delete t.settings.operations[folder.path];
+								persist();
 							}),
 						);
 					}
@@ -523,6 +552,8 @@ export const push = async (
 					t.settings.driveIdToPath[id] = note.path;
 					recordSynced(t, note.path, stamp, await hashOf(data));
 					uploaded.push({ id, path: note.path, size: data.byteLength });
+					delete t.settings.operations[note.path];
+					persist();
 				}),
 			);
 		});
@@ -568,6 +599,8 @@ export const push = async (
 					);
 					recordSynced(t, file.path, stamp, await hashOf(data));
 					uploaded.push({ id, path: file.path, size: data.byteLength });
+					delete t.settings.operations[file.path];
+					persist();
 					}),
 				);
 			});
@@ -661,6 +694,7 @@ export const push = async (
 		);
 
 		t.settings.operations = {};
+		allUploaded = true;
 
 		// Version history: one restore point per Push. Never fails the Push (see history.ts).
 		if (t.settings.historyEnabled === true) {
@@ -706,10 +740,20 @@ export const push = async (
 			message: sanitizeMessage(error),
 			stack: error instanceof Error ? error.stack : undefined,
 		});
+		const pending = Object.keys(t.settings.operations).length;
 		new Notice(
-			`Push failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
-			8000,
+			allUploaded
+				? `Push failed during ${lastPhase}, after everything was uploaded (the connection may have dropped). Press Push again: nothing will be uploaded twice. Use "Copy diagnostics" for details.`
+				: uploaded.length || pending
+					? `Push failed during ${lastPhase}. ${uploaded.length} file${uploaded.length === 1 ? ' was' : 's were'} uploaded before it stopped and ${pending} change${pending === 1 ? ' is' : 's are'} still pending. Press Push again once the problem is fixed. Use "Copy diagnostics" for details.`
+					: `Push failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
+			12000,
 		);
+		try {
+			await t.saveSettings();
+		} catch {
+			// best effort
+		}
 		console.error('Google Drive push failed', error);
 	} finally {
 		if (t.syncing) t.abortSync(syncNotice);

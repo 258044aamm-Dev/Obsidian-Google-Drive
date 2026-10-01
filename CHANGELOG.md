@@ -4,6 +4,19 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.6.4 - 2026-10-01
+
+### Fixed
+- **A Push that was interrupted (connection lost) can now simply be repeated.** Found by simulating a lost connection at each step of Push and Pull:
+  - **Notes and folders were uploaded twice.** The pending list was emptied only after *all* uploads had succeeded, so after an interruption the notes that had already reached Drive were created again, and a new folder was created twice (the phone then pulled the copy and queued yet another upload). This came from the fork's "Push never pulls" change (upstream's Push began with a full Pull, which hid it). Now each note, folder and delete is removed from the pending list the moment it is done on Drive, and progress is saved as the Push goes.
+  - **A Push could get stuck** with "could not identify all drive files to delete" on every attempt (this was also in upstream 3.1.1): the deletes were done on Drive and their ids forgotten, but the pending "delete" entries stayed. They are now cleared together, and a pending delete whose Drive file is no longer known is dropped (Drive is not touched) instead of stopping the Push.
+  - **An interrupted Pull left false "deleted here" entries** (`note.md: delete`) in the pending list, and the next Push re-uploaded identical notes. Pull now takes back the ids of files that never reached this device.
+- A failed batch of uploads or downloads now waits until every request of that batch has finished before it reports the failure, so nothing keeps changing files in the background after "failed".
+
+### Changed
+- The Push failure message says how far it got: "3 files were uploaded before it stopped and 3 changes are still pending. Press Push again", or, when only the last step failed, "after everything was uploaded… nothing will be uploaded twice".
+- Not changed: timeouts and automatic retries (planned together with 3.7.0). The Drive format is unchanged.
+
 ## 3.6.3 - 2026-10-01
 
 ### Fixed

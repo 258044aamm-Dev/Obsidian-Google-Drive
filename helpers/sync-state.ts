@@ -12,6 +12,8 @@
  * Both are additive, optional settings. Losing them only brings back the older, slower checks.
  */
 import type ObsidianGoogleDrive from '../main';
+import { configCategoryOf, isConfigPathSynced } from './config-scope';
+import { isOwnPluginPath } from './own-plugin';
 
 export interface FileStamp {
 	/** modification time in ms */
@@ -164,6 +166,26 @@ export const locallyEdited = async (
 
 export const hasBaseline = (t: ObsidianGoogleDrive, path: string) =>
 	!!t.settings.syncedFiles?.[path];
+
+/**
+ * Settings files that Drive knows and that exist on this device get a remembered state, so that
+ * a later local deletion can be told apart from "this device never had the file" (Push only
+ * removes a settings file from Drive when this device had it). Called after a successful sync.
+ */
+export const seedConfigBaselines = async (t: ObsidianGoogleDrive) => {
+	try {
+		const configDir = t.app.vault.configDir;
+		for (const path of Object.values(t.settings.driveIdToPath)) {
+			if (configCategoryOf(configDir, path) === undefined) continue;
+			if (path === configDir || isOwnPluginPath(t, path)) continue;
+			if (!isConfigPathSynced(t, path)) continue;
+			if (t.settings.syncedFiles?.[path]) continue;
+			await recordSyncedFromDisk(t, path);
+		}
+	} catch {
+		// best effort: without it a local deletion is simply not passed on to Drive
+	}
+};
 
 /** Drops what can no longer matter. `keepPaths` are the paths Drive knows. */
 export const pruneSyncState = (

@@ -4,6 +4,21 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.7.0 - 2026-10-01
+
+### Added
+- **Themes and CSS snippets are synced** (`themes/<name>/theme.css`, `themes/<name>/manifest.json`, `snippets/*.css` in the configuration folder). Other files in those folders are not synced. They travel like the other settings files (and are encrypted when end-to-end encryption is on).
+- **Three switches in the settings, all on by default:** settings files and other plugins' files, themes, snippets. A switched-off kind is not uploaded, not downloaded and not deleted (locally or on Drive); switching one off later deletes nothing. A restore from version history also leaves a switched-off kind alone. A one-time notice informs existing users.
+- **Getting-started tour** (8 steps, each skippable; "Skip tour"): offered once, with a small notice, to a device that has no token, nothing synced and no earlier tour state; also from the settings ("Getting started") and the command "Open the getting-started tour". Actions inside (open the sign-in page, open the settings, Pull, Push, set up encryption, Sync doctor) run only after the user presses the button, and Pull asks for confirmation first. Progress is saved so the tour can be continued.
+
+### Fixed
+- **A device that never had a settings file could delete it from Drive.** Push removed a settings/plugin/theme/snippet file from Drive when it was missing locally, with no check that this device had ever had it. Now it is removed only if this device pulled or pushed it before (a remembered state). After the first successful sync after the update, existing files get that remembered state, so deletions are passed on again; before it, a local deletion of a settings file is not passed on (the safe direction).
+
+### Notes
+- New optional settings fields: `syncConfigFiles`, `syncThemes`, `syncSnippets` (absent = on), `themeNoticeShown`, `tourState`. The Drive format is unchanged. Existing settings-file rules are unchanged.
+- Themes and snippets that already exist on a device are uploaded at its first Push even if they are old (they were not synced before); files already on Drive are not uploaded again unless changed.
+- Not changed: ignore paths and the large-file limit (moved to 3.8.0). Unverified on real Obsidian: how the tour looks on a phone, and whether Obsidian creates the theme folders on a device that has none (the plugin already relies on this for plugin folders).
+
 ## 3.6.4 - 2026-10-01
 
 ### Fixed

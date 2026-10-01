@@ -22,6 +22,7 @@ import {
 	type RestorePointInfo,
 } from './history';
 import { planRestore, type PlanItem, type RestorePlan } from './history-plan';
+import { isConfigPathSynced } from './config-scope';
 
 const GONE = 'Drive no longer has that old version (it expired or the file was deleted for good)';
 const MAX_FAILURES = 5;
@@ -82,7 +83,12 @@ export const buildRestorePlan = async (
 	if (!(await ensureToken(t))) throw new Error('Authentication failed.');
 	const point = await readRestorePoint(t, info.id);
 	const current = await listDriveEntries(t);
-	const plan = planRestore(point.e, current, includeConfig);
+	// A kind of settings file that is switched off (themes, snippets, settings files) is not part of the restore.
+	const plan = planRestore(
+		point.e.filter((entry) => isConfigPathSynced(t, entry.p)),
+		current.filter((entry) => isConfigPathSynced(t, entry.path)),
+		includeConfig,
+	);
 
 	const items = [...plan.revert, ...plan.recreate];
 	const missing = new Set<PlanItem>();

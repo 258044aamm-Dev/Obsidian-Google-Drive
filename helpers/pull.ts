@@ -16,6 +16,7 @@ import {
 	partitionFolderDeletions,
 } from './folder-deletion';
 import { isOwnPluginPath } from './own-plugin';
+import { isConfigPathSynced } from './config-scope';
 import { addTrashedAsRemoved } from './trash';
 import { sameBytes, saveConflictCopy } from './conflict-copy';
 import {
@@ -98,7 +99,10 @@ export const pull = async (
 
 		// This plugin's own folder (code + private state) is never pulled.
 		const recentlyModified = listedRecentlyModified.filter(
-			({ properties }) => !isOwnPluginPath(t, unSplitPath(properties)),
+			({ properties }) =>
+				!isOwnPluginPath(t, unSplitPath(properties)) &&
+				// a switched-off kind of settings file (see config-scope.ts) is neither pulled nor counted
+				isConfigPathSynced(t, unSplitPath(properties)),
 		);
 
 		const cloudSet = new Set(
@@ -212,7 +216,7 @@ export const pull = async (
 					isFolder: mimeType === folderMimeType,
 				}));
 			const gone = Object.values(removedPaths).filter(
-				(path): path is string => !!path,
+				(path): path is string => !!path && isConfigPathSynced(t, path),
 			);
 			guard.remoteCount = countRemoteChanges(changed, gone);
 			guard.conflicts = findCollisions(
@@ -593,6 +597,7 @@ export const pull = async (
 						const path = removedPaths[fileId];
 						if (!path || vault.getAbstractFileByPath(path)) return;
 						if (isOwnPluginPath(t, path)) return;
+						if (!isConfigPathSynced(t, path)) return;
 						const stat = await adapter.stat(path);
 						if (!stat) return;
 						return { path, type: stat.type };

@@ -29,6 +29,15 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.7.0: themes and snippets, three switches, getting-started tour
+
+- **Themes and CSS snippets are synced** (`<config>/themes/<name>/theme.css` + `manifest.json`, and `<config>/snippets/*.css`), so the appearance setting finds its theme on every device. Other files in those folders are left alone.
+- **Three switches in the settings, all ON by default:** *Sync Obsidian settings and other plugins' files*, *Sync themes*, *Sync CSS snippets*. A switch that is off means that kind of file is neither uploaded, nor downloaded, nor deleted, and turning a switch off later deletes nothing on Drive or on your devices. A one-time notice tells existing users about themes and snippets.
+- **Settings files are replaced as a whole** (last writer wins, no merge, no conflict copy). Restart Obsidian after a Pull brought new settings, plugins or themes.
+- **A device can no longer delete a settings file from Drive that it never had.** Push removes such a file from Drive only if this device had it (pulled or pushed it before). After the first successful sync after updating, deletions of settings files are passed on again.
+- **Getting-started tour:** a new device is offered it once with a small notice (*Start tour* / *Skip*); you can start it any time from the settings (*Getting started*) or with the command *Open the getting-started tour*. Eight steps, each can be skipped. Buttons inside run an action only after you confirm it. English only.
+- Not in this version (planned for 3.8.0): ignore paths and a size limit for files.
+
 ## What is new in 3.6.0: end-to-end encryption (optional)
 
 With encryption on, your notes and their **file and folder names** are encrypted on your device before they go to Google Drive. Drive stores random names and unreadable data. It is **off by default**; nothing changes unless you turn it on in *Settings > Google Drive Sync > End-to-end encryption*.
@@ -90,7 +99,7 @@ After **every successful Push** the plugin saves a small **restore point** on Go
 3. Before anything changes, a restore point of the current state is saved. **To undo a restore, restore that point.**
 4. The restore changes **this device only**. Nothing is uploaded. Look through the vault, then press **Push**: its confirmation lists everything that will change on Drive, with the red warning for large deletions.
 
-The checkbox *Also restore settings and plugin files* (on by default) covers the files in the configuration folder that this plugin syncs (settings files and the files of your other plugins). Themes and snippets are not synced by this plugin, so they cannot be restored. This plugin's own folder is never touched. Restart Obsidian after restoring settings or plugins.
+The checkbox *Also restore settings and plugin files* (on by default) covers the files in the configuration folder that this plugin syncs (settings files, the files of your other plugins, themes and snippets, each as far as its sync switch in the settings is on). This plugin's own folder is never touched. Restart Obsidian after restoring settings or plugins.
 
 ### Limits to know about
 

@@ -117,7 +117,7 @@ class RestoreModal extends Modal {
 		new Setting(contentEl)
 			.setName('Also restore settings and plugin files')
 			.setDesc(
-				`The files in the ${this.t.app.vault.configDir} folder that this plugin syncs. Restart Obsidian afterwards. Themes and snippets are not synced by this plugin, so they are not restored.`,
+				`The files in the ${this.t.app.vault.configDir} folder that this plugin syncs. Settings files, other plugins, themes and snippets, as far as their sync switches in the plugin settings are on. Restart Obsidian afterwards.`,
 			)
 			.addToggle((toggle) =>
 				toggle.setValue(this.includeConfig).onChange((value) => {

@@ -3,6 +3,7 @@ import { getDriveAgent } from './requests';
 import { E2eeError, requireUnlocked } from './e2ee';
 import { isOwnPluginPath } from './own-plugin';
 import { recordOwnUpload } from './sync-state';
+import { isCategoryEnabled, THEME_FILES } from './config-scope';
 import { Notice, requestUrl, TAbstractFile, TFolder } from 'obsidian';
 
 export interface FileMetadata {
@@ -709,15 +710,22 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		await Promise.all(files.map((file) => t.deleteFile(file)));
 	};
 
-	const getConfigFilesToSync = async () => {
+	/**
+	 * @param knownOnDrive paths that already exist on Drive. Given by Push: a theme or snippet that is
+	 *   not on Drive yet is uploaded even if it is old (they were not synced before 3.7.0).
+	 */
+	const getConfigFilesToSync = async (knownOnDrive?: Set<string>) => {
 		const configFilesToSync: string[] = [];
 		const { vault } = t.app;
 		const { adapter } = vault;
 
-		const [configFiles, plugins] = await Promise.all([
-			adapter.list(vault.configDir),
-			adapter.list(vault.configDir + '/plugins'),
-		]);
+		const none = { files: [] as string[], folders: [] as string[] };
+		const [configFiles, plugins] = isCategoryEnabled(t, 'settings')
+			? await Promise.all([
+					adapter.list(vault.configDir),
+					adapter.list(vault.configDir + '/plugins'),
+				])
+			: [none, none];
 
 		await Promise.all(
 			configFiles.files
@@ -758,6 +766,39 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 						}),
 				),
 		);
+
+		// Themes and snippets (switchable). A missing folder just means there is nothing to sync.
+		const listOrNothing = async (folder: string) => {
+			try {
+				return (await adapter.list(folder)) ?? none;
+			} catch {
+				return none;
+			}
+		};
+		const consider = async (path: string) => {
+			const file = await adapter.stat(path);
+			if (
+				(file?.mtime || 0) > t.settings.lastSyncedAt ||
+				(knownOnDrive !== undefined && !knownOnDrive.has(path))
+			) {
+				configFilesToSync.push(path);
+			}
+		};
+		if (isCategoryEnabled(t, 'themes')) {
+			const themes = await listOrNothing(vault.configDir + '/themes');
+			for (const theme of themes.folders) {
+				const inside = await listOrNothing(theme);
+				for (const path of inside.files) {
+					if (THEME_FILES.includes(fileNameFromPath(path))) await consider(path);
+				}
+			}
+		}
+		if (isCategoryEnabled(t, 'snippets')) {
+			const snippets = await listOrNothing(vault.configDir + '/snippets');
+			for (const path of snippets.files) {
+				if (path.toLowerCase().endsWith('.css')) await consider(path);
+			}
+		}
 
 		return configFilesToSync;
 	};

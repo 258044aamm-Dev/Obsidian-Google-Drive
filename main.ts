@@ -23,7 +23,8 @@ import { openChangePassphrase, openDisableEncryption, openEnableEncryption, open
 import { createRestorePointNow, startVaultRestore } from './helpers/history-ui';
 import { HISTORY_MAX_DAYS, HISTORY_MIN_DAYS } from './helpers/history';
 import { DiagnosticsManager, sanitizeMessage } from './helpers/diagnostics';
-import { pruneSyncState, recordSyncedFromDisk } from './helpers/sync-state';
+import { maybeOfferTour, maybeShowThemeNotice, openTour, canResumeTour } from './helpers/tour';
+import { pruneSyncState, recordSyncedFromDisk, seedConfigBaselines } from './helpers/sync-state';
 import type { DiagnosticEntry, SyncPhase } from './helpers/diagnostics';
 
 const isInConfigDir = (configDir: string, path: string) =>
@@ -56,6 +57,16 @@ interface PluginSettings {
 	/** Id of this device's key for the encrypted vault (the key itself is in the device's IndexedDB). */
 	e2eeKid: string;
 	/** The plain Drive link this device had before encryption was turned on, so turning it off can go back. */
+	/** Sync the Obsidian settings files and the other plugins' files. On unless explicitly false (see helpers/config-scope.ts). */
+	syncConfigFiles?: boolean;
+	/** Sync the themes in the configuration folder. On unless explicitly false. */
+	syncThemes?: boolean;
+	/** Sync the CSS snippets in the configuration folder. On unless explicitly false. */
+	syncSnippets?: boolean;
+	/** The one-time notice about theme and snippet sync has been shown. */
+	themeNoticeShown?: boolean;
+	/** Progress of the getting-started tour (see helpers/tour-state.ts). */
+	tourState?: import('./helpers/tour-state').TourState;
 	/** Drive id -> the modifiedTime Drive reported after THIS device uploaded the file (see helpers/sync-state.ts). */
 	ownUploads?: Record<string, string>;
 	/** Vault path -> { m: mtime, s: size } when the file was last known to match its Drive copy. */
@@ -124,7 +135,16 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 		this.addSettingTab(new SettingsTab(this.app, this));
 
+		// Available before the token is added too: it is how a new user gets started.
+		this.addCommand({
+			id: 'open-tour',
+			name: 'Open the getting-started tour',
+			callback: () => openTour(this),
+		});
+
 		if (!this.settings.refreshToken) {
+			// A brand-new device is offered the tour once, with a small notice.
+			if (maybeOfferTour(this)) return;
 			new Notice(
 				"Please add your refresh token to Google Drive sync through our website or our readme/this plugin's settings. If you haven't already, please read through this plugin's readme or website for instructions on how to use this plugin. Be careful of your first sync, and make sure to back up your data before your first sync.",
 				10000,
@@ -227,6 +247,9 @@ export default class ObsidianGoogleDrive extends Plugin {
 			this.registerEvent(
 				vault.on('rename', this.handleRename.bind(this)),
 			);
+
+			// Themes and snippets sync by default since 3.7.0: tell a device that already used the plugin, once.
+			maybeShowThemeNotice(this);
 
 			// Sync is manual: nothing is pulled at startup unless the user opted in.
 			if (!this.settings.startupPull) return;
@@ -535,6 +558,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 			}
 			this.settings.lastSyncedAt = syncedAt;
 			this.settings.changesToken = changesToken;
+			await seedConfigBaselines(this);
 			pruneSyncState(
 				this,
 				new Set(Object.values(this.settings.driveIdToPath)),
@@ -752,6 +776,20 @@ class SettingsTab extends PluginSettingTab {
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		return [
 			{
+				name: 'Getting started',
+				render: (setting) => {
+					const btns = renderRow(
+						setting,
+						'Getting started',
+						'A short step-by-step tour: connect Google Drive, the first sync, optional encryption, daily use and the safety tools. Every step can be skipped.',
+					);
+					btns.createEl('button', { text: 'Start the tour' }).addEventListener('click', () => openTour(this.plugin));
+					if (canResumeTour(this.plugin)) {
+						btns.createEl('button', { text: 'Continue the tour' }).addEventListener('click', () => openTour(this.plugin, true));
+					}
+				},
+			},
+			{
 				name: 'Get refresh token',
 				render: (setting) => {
 					setting.settingEl.empty();
@@ -857,6 +895,33 @@ class SettingsTab extends PluginSettingTab {
 				control: {
 					type: 'toggle',
 					key: 'deleteToTrash',
+					defaultValue: true,
+				},
+			},
+			{
+				name: 'Sync Obsidian settings and other plugins\' files',
+				desc: 'On: your Obsidian settings files (appearance, hotkeys, which plugins are enabled ...) and the files of your other plugins are synced. This plugin\'s own folder, open tabs and the graph layout are never synced. Restart Obsidian after a Pull brought new settings.',
+				control: {
+					type: 'toggle',
+					key: 'syncConfigFiles',
+					defaultValue: true,
+				},
+			},
+			{
+				name: 'Sync themes',
+				desc: 'On: the themes in your configuration folder are synced, so the appearance setting finds its theme on every device. Turning it off does not delete anything on Google Drive or on your devices.',
+				control: {
+					type: 'toggle',
+					key: 'syncThemes',
+					defaultValue: true,
+				},
+			},
+			{
+				name: 'Sync CSS snippets',
+				desc: 'On: your CSS snippets are synced. Turning it off does not delete anything on Google Drive or on your devices.',
+				control: {
+					type: 'toggle',
+					key: 'syncSnippets',
 					defaultValue: true,
 				},
 			},

@@ -16,7 +16,8 @@ import { sanitizeMessage } from './diagnostics';
 import { massDeleteWarning } from './push-warning';
 import { recordRestorePointAfterPush } from './history';
 import { recordMissedEdits } from './missed-edits';
-import { hashOf, recordSynced, stampOf } from './sync-state';
+import { hashOf, recordSynced, recordSyncedFromDisk, stampOf } from './sync-state';
+import { isConfigPathSynced } from './config-scope';
 import { verifySummary, verifyUploads } from './push-verify';
 import type { UploadedItem } from './push-verify';
 
@@ -415,8 +416,15 @@ export const push = async (
 				const path = unSplitPath(properties);
 				// Config files of this plugin itself are not managed by sync.
 				if (isOwnPluginPath(t, path)) return;
+				// A kind of settings file that is switched off is left alone on Drive.
+				if (!isConfigPathSynced(t, path)) return;
 				if (!(await adapter.exists(path))) {
-					deletes.push([path, 'delete']);
+					// Missing here is only a deletion if this device HAD the file (it pulled or
+					// pushed it before). A device that never had it (a phone that has not pulled
+					// yet, a vault joined later) must not remove it from Drive.
+					if (t.settings.syncedFiles?.[path]) {
+						deletes.push([path, 'delete']);
+					}
 				}
 			}),
 		);
@@ -611,7 +619,9 @@ export const push = async (
 			'get-config-files',
 			async () => {
 				lastPhase = 'config-sync';
-				return t.drive.getConfigFilesToSync();
+				return t.drive.getConfigFilesToSync(
+					new Set(configOnDrive.map(({ properties }) => unSplitPath(properties))),
+				);
 			},
 		);
 
@@ -661,18 +671,20 @@ export const push = async (
 
 		await batchAsync(
 			configFilesToSync.map((path) => async () => {
+				const configData = await adapter.readBinary(path);
 				if (pathsToIds[path]) {
 					await t.drive.updateFile(
 						pathsToIds[path],
-						new Blob([await adapter.readBinary(path)]),
+						new Blob([configData]),
 						{ modifiedTime: new Date().toISOString() },
 						path,
 					);
+					await recordSyncedFromDisk(t, path, configData);
 					return;
 				}
 
 				const id = await t.drive.uploadFile(
-					new Blob([await adapter.readBinary(path)]),
+					new Blob([configData]),
 					fileNameFromPath(path),
 					pathsToIds[path.split('/').slice(0, -1).join('/')],
 					{
@@ -690,6 +702,7 @@ export const push = async (
 
 				t.settings.driveIdToPath[id] = path;
 				pathsToIds[path] = id;
+				await recordSyncedFromDisk(t, path, configData);
 			}),
 		);
 

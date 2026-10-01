@@ -117,12 +117,25 @@ export class FakeVault {
 		this.idx = next;
 	}
 
+	/** Like Obsidian, every TFile has a live `stat`. */
+	private withStat<T>(f: T): T {
+		if (f instanceof TFile && !('stat' in f)) {
+			Object.defineProperty(f, 'stat', {
+				configurable: true,
+				get: () => {
+					const e = this.disk.get(f.path);
+					return { mtime: e?.mtime ?? 0, ctime: e?.mtime ?? 0, size: e?.data?.length ?? 0 };
+				},
+			});
+		}
+		return f;
+	}
 	getAbstractFileByPath(p: string) {
-		return p === '/' ? this.idx.get('/') : (this.idx.get(p) ?? null);
+		return p === '/' ? this.idx.get('/') : this.withStat(this.idx.get(p) ?? null);
 	}
 	getFileByPath(p: string) {
 		const f = this.idx.get(p);
-		return f instanceof TFile ? f : null;
+		return f instanceof TFile ? this.withStat(f) : null;
 	}
 	getFolderByPath(p: string) {
 		const f = this.idx.get(p);

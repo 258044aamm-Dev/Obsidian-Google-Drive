@@ -128,6 +128,8 @@ describe.each([true, false])('sync memory (deleteToTrash=%s)', (trash) => {
 		await mobile.push();
 		expect(mobile.plugin.settings.syncedFiles['Inbox/a.md']).not.toEqual(before);
 		const file = mobile.vault.getFileByPath('Inbox/a.md') as any;
-		expect(mobile.plugin.settings.syncedFiles['Inbox/a.md']).toEqual({ m: file.stat.mtime, s: file.stat.size });
+		const now = mobile.plugin.settings.syncedFiles['Inbox/a.md'];
+		expect({ m: now.m, s: now.s }).toEqual({ m: file.stat.mtime, s: file.stat.size });
+		expect(now.h).toMatch(/^[0-9a-f]{32}$/);
 	});
 });

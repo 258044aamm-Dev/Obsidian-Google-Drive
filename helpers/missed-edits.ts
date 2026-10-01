@@ -14,7 +14,7 @@ import { TFile } from 'obsidian';
 import { sameBytes } from './conflict-copy';
 import { isOwnPluginPath } from './own-plugin';
 import { sanitizeMessage } from './diagnostics';
-import { recordSynced } from './sync-state';
+import { hashOf, recordSynced } from './sync-state';
 
 /** Candidates beyond this number are not compared one by one (a bulk edit): they are all added. */
 export const MAX_COMPARED_EDITS = 50;
@@ -26,7 +26,7 @@ export interface LocalFile {
 }
 
 /** Remembered state of a file when it last matched Drive (see helpers/sync-state.ts). */
-export type Baselines = Record<string, { m: number; s: number }>;
+export type Baselines = Record<string, { m: number; s: number; h?: string }>;
 
 /**
  * Notes that Drive knows (saved id), that are not pending and that may differ from Drive.
@@ -117,16 +117,16 @@ export const recordMissedEdits = async (
 				try {
 					const remote = await t.drive.getFile(id, path).arrayBuffer();
 					if (remote) {
-						differs = !sameBytes(
-							await t.app.vault.readBinary(file),
-							remote,
-						);
+						const local = await t.app.vault.readBinary(file);
+						differs = !sameBytes(local, remote);
 						// Identical to Drive: remember that, so it is not looked at again.
 						if (!differs) {
-							recordSynced(t, path, {
-								m: file.stat.mtime,
-								s: file.stat.size,
-							});
+							recordSynced(
+								t,
+								path,
+								{ m: file.stat.mtime, s: file.stat.size },
+								await hashOf(local),
+							);
 							settingsChanged = true;
 						}
 					}

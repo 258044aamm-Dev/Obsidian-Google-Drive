@@ -16,7 +16,7 @@ import { sanitizeMessage } from './diagnostics';
 import { massDeleteWarning } from './push-warning';
 import { recordRestorePointAfterPush } from './history';
 import { recordMissedEdits } from './missed-edits';
-import { recordSynced, stampOf } from './sync-state';
+import { hashOf, recordSynced, stampOf } from './sync-state';
 import { verifySummary, verifyUploads } from './push-verify';
 import type { UploadedItem } from './push-verify';
 
@@ -521,7 +521,7 @@ export const push = async (
 					);
 
 					t.settings.driveIdToPath[id] = note.path;
-					recordSynced(t, note.path, stamp);
+					recordSynced(t, note.path, stamp, await hashOf(data));
 					uploaded.push({ id, path: note.path, size: data.byteLength });
 				}),
 			);
@@ -566,7 +566,7 @@ export const push = async (
 					syncNotice.setMessage(
 						`Pushing... updating ${completed}/${files.length} files`,
 					);
-					recordSynced(t, file.path, stamp);
+					recordSynced(t, file.path, stamp, await hashOf(data));
 					uploaded.push({ id, path: file.path, size: data.byteLength });
 					}),
 				);

@@ -4,6 +4,19 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.6.3 - 2026-10-01
+
+### Fixed
+- **Pull no longer overwrites a note that was edited on this device without the plugin noticing.** Before, a note with no pending edit was always replaced by Drive's version, so an edit whose event was lost (and not yet found by the missed-edit scan) could be lost. Now Pull compares the note with the state remembered when it last matched Drive (modified time, size and, new in this version, a short content fingerprint). If the content really changed here, your version is kept, Drive's version is saved next to it as `name (Drive YYYY-MM-DD).md`, the note is marked to be pushed, and a Notice says so. A note that was only touched (same content) or whose content equals Drive's is not treated as edited, so no needless copies are made.
+- **A note deleted on Drive but edited here is kept** and uploaded again at the next Push (also for notes inside a folder deleted on Drive).
+- Unchanged behaviour: a note with nothing remembered (a vault just copied or joined) is overwritten by Drive as before, so a device with a stale copy gets no flood of copies; a note edited with a pending edit is handled as before; notes changed only on Drive are updated as before.
+
+### Changed
+- The remembered state of each note gains an optional content fingerprint (first 16 bytes of SHA-256, stored only in this device's plugin settings; never uploaded). States saved by 3.6.2 without it still work: a different size counts as an edit, a different time alone does not. The Drive format is unchanged.
+
+### Documentation
+- The two Remotely Save comparison documents wrongly said the encrypted Drive vault hides the folder tree. It does not: Drive folders mirror the vault's folders with opaque names, so Google sees the tree shape (like Remotely Save's rclone mode; only its OpenSSL mode is flat). Corrected.
+
 ## 3.6.2 - 2026-09-30
 
 ### Fixed

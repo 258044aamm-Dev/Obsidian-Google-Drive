@@ -18,7 +18,26 @@ export interface FileStamp {
 	m: number;
 	/** size in bytes */
 	s: number;
+	/** first 16 bytes of the SHA-256 of the (plain) content, hex; absent in states saved by 3.6.2 */
+	h?: string;
 }
+
+/** Short fingerprint of a note's content. Undefined when it cannot be computed. */
+export const hashOf = async (
+	data: ArrayBuffer | Uint8Array,
+): Promise<string | undefined> => {
+	try {
+		const view = data instanceof Uint8Array ? data : new Uint8Array(data);
+		const digest = new Uint8Array(
+			await window.crypto.subtle.digest('SHA-256', view as BufferSource),
+		);
+		return Array.from(digest.slice(0, 16), (b) =>
+			b.toString(16).padStart(2, '0'),
+		).join('');
+	} catch {
+		return undefined;
+	}
+};
 
 /** Nothing is remembered past this many entries (keeps data.json small). */
 const MAX_OWN_UPLOADS = 2000;
@@ -69,21 +88,31 @@ export const recordSynced = (
 	t: ObsidianGoogleDrive,
 	path: string,
 	stamp: FileStamp | undefined,
+	hash?: string,
 ) => {
 	if (!t.settings || !stamp) return;
 	if (!Number.isFinite(stamp.m) || !Number.isFinite(stamp.s)) return;
-	syncedFiles(t)[path] = { m: stamp.m, s: stamp.s };
+	const h = hash ?? stamp.h;
+	syncedFiles(t)[path] = h
+		? { m: stamp.m, s: stamp.s, h }
+		: { m: stamp.m, s: stamp.s };
 };
 
 /** Looks at the file on disk right now (used after a download wrote it). Never throws. */
 export const recordSyncedFromDisk = async (
 	t: ObsidianGoogleDrive,
 	path: string,
+	content?: ArrayBuffer | Uint8Array,
 ) => {
 	try {
 		const stat = await t.app.vault.adapter.stat?.(path);
 		if (stat && stat.type !== 'folder') {
-			recordSynced(t, path, { m: stat.mtime, s: stat.size });
+			recordSynced(
+				t,
+				path,
+				{ m: stat.mtime, s: stat.size },
+				content ? await hashOf(content) : undefined,
+			);
 		}
 	} catch {
 		// no baseline is the safe outcome
@@ -103,6 +132,34 @@ export const matchesBaseline = (
 ) => {
 	const base = t.settings.syncedFiles?.[path];
 	return !!base && base.m === mtime && base.s === size;
+};
+
+/**
+ * True when this device's copy of a note is no longer what it was when it last matched Drive,
+ * i.e. the user (or a tool) really changed the CONTENT here.
+ *  - nothing remembered: false (unknown; the caller keeps its old behaviour);
+ *  - time and size unchanged: false;
+ *  - a remembered content fingerprint: compare it with the current content, so a note that was
+ *    only touched (new time, same content) is not an edit;
+ *  - no fingerprint (state from 3.6.2): a different size is an edit, a different time alone is not.
+ */
+export const locallyEdited = async (
+	t: ObsidianGoogleDrive,
+	file: { path: string; stat?: { mtime: number; size: number } },
+	readLocal: () => Promise<ArrayBuffer>,
+): Promise<boolean> => {
+	try {
+		const base = t.settings.syncedFiles?.[file.path];
+		if (!base || !file.stat) return false;
+		if (base.m === file.stat.mtime && base.s === file.stat.size) return false;
+		if (base.h) {
+			const now = await hashOf(await readLocal());
+			return now !== undefined && now !== base.h;
+		}
+		return base.s !== file.stat.size;
+	} catch {
+		return false;
+	}
 };
 
 export const hasBaseline = (t: ObsidianGoogleDrive, path: string) =>

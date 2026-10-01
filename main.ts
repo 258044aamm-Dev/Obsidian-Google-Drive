@@ -59,7 +59,7 @@ interface PluginSettings {
 	/** Drive id -> the modifiedTime Drive reported after THIS device uploaded the file (see helpers/sync-state.ts). */
 	ownUploads?: Record<string, string>;
 	/** Vault path -> { m: mtime, s: size } when the file was last known to match its Drive copy. */
-	syncedFiles?: Record<string, { m: number; s: number }>;
+	syncedFiles?: Record<string, { m: number; s: number; h?: string }>;
 	e2eePlainLink?: {
 		rootFolderId: string;
 		driveIdToPath: Record<string, string>;
@@ -420,7 +420,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.app.vault.createBinary(path, content, {
 			mtime: modificationDate,
 		});
-		await recordSyncedFromDisk(this, path);
+		await recordSyncedFromDisk(this, path, content);
 		if (oldOperation) this.settings.operations[path] = oldOperation;
 		else delete this.settings.operations[path];
 	}
@@ -441,7 +441,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.app.vault.modifyBinary(file, content, {
 			mtime: modificationDate,
 		});
-		await recordSyncedFromDisk(this, file.path);
+		await recordSyncedFromDisk(this, file.path, content);
 		if (oldOperation) this.settings.operations[file.path] = oldOperation;
 		else delete this.settings.operations[file.path];
 	}
@@ -462,7 +462,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.app.vault.adapter.writeBinary(file, content, {
 			mtime: modificationDate,
 		});
-		await recordSyncedFromDisk(this, file);
+		await recordSyncedFromDisk(this, file, content);
 		if (isInConfigDir(this.app.vault.configDir, file)) {
 			(this.pulledConfigPaths ||= new Set()).add(file);
 		}

@@ -18,7 +18,13 @@ import {
 import { isOwnPluginPath } from './own-plugin';
 import { addTrashedAsRemoved } from './trash';
 import { sameBytes, saveConflictCopy } from './conflict-copy';
-import { isOwnUpload } from './sync-state';
+import {
+	hashOf,
+	isOwnUpload,
+	locallyEdited,
+	recordSynced,
+	stampOf,
+} from './sync-state';
 import {
 	countRemoteChanges,
 	findCollisions,
@@ -261,9 +267,38 @@ export const pull = async (
 		const impliedIds = new Set<string>();
 
 		const deleteFiles = async () => {
+			// Notes that Drive removed but that were really edited on this device (the edit event
+			// may have been missed): they are kept and uploaded again, like a pending edit.
+			const editedHere = new Set<string>();
+			{
+				const candidates: TFile[] = [];
+				for (const entry of deletions) {
+					if (entry instanceof TFile) candidates.push(entry);
+					else if (entry instanceof TFolder && !pathToId[entry.path]) {
+						const prefix = entry.path + '/';
+						vault
+							.getFiles()
+							.filter((f) => f.path.startsWith(prefix))
+							.forEach((f) => candidates.push(f));
+					}
+				}
+				for (const file of candidates) {
+					if (
+						!t.settings.operations[file.path] &&
+						(await locallyEdited(t, file, () => vault.readBinary(file)))
+					) {
+						editedHere.add(file.path);
+					}
+				}
+			}
+
 			const explicitFiles = deletions
 				.filter((file) => file instanceof TFile)
 				.filter((file: TFile) => {
+					if (editedHere.has(file.path)) {
+						t.settings.operations[file.path] = 'create';
+						return;
+					}
 					if (t.settings.operations[file.path] === 'modify') {
 						if (!pathToId[file.path]) {
 							t.settings.operations[file.path] = 'create';
@@ -284,7 +319,9 @@ export const pull = async (
 					const id = pathToId[path];
 					if (!id || modifiedOnDrive.has(id)) return 'unknown';
 					const operation = t.settings.operations[path];
-					if (!operation) return 'gone';
+					if (!operation) {
+						return !isFolder && editedHere.has(path) ? 'edited' : 'gone';
+					}
 					// A locally edited file whose Drive copy is gone: keep it, upload it again.
 					return !isFolder && operation === 'modify' ? 'edited' : 'unknown';
 				},
@@ -450,6 +487,32 @@ export const pull = async (
 					if (localFile && operation === 'create') {
 						t.settings.operations[path] = 'modify';
 						await keepDriveVersionAsCopy(file, path, localFile);
+						return;
+					}
+
+					// No pending edit, but the note is not what it was when it last matched Drive:
+					// it was edited here without the plugin noticing. Never overwrite it.
+					if (
+						localFile instanceof TFile &&
+						!operation &&
+						path !== vault.configDir &&
+						!path.startsWith(vault.configDir + '/') &&
+						(await locallyEdited(t, localFile, () =>
+							adapter.readBinary(path),
+						))
+					) {
+						const driveContent = await t.drive
+							.getFile(file.id, path)
+							.arrayBuffer();
+						const here = await adapter.readBinary(path);
+						if (sameBytes(here, driveContent)) {
+							// Same as Drive after all: nothing to keep apart, just remember it.
+							recordSynced(t, path, stampOf(localFile), await hashOf(here));
+							return;
+						}
+						const saved = await saveConflictCopy(t, path, driveContent);
+						if (saved.created) conflictCopies.push(saved.path);
+						t.settings.operations[path] = 'modify';
 						return;
 					}
 

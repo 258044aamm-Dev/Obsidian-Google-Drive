@@ -212,3 +212,62 @@
 	line-height: 1;
 	color: var(--text-muted);
 }
+
+/* The floating Push/Pull button on phones (3.11.0) */
+.ogd-float {
+	position: fixed;
+	z-index: 30;
+	display: flex;
+	align-items: center;
+	min-height: 40px;
+	border-radius: 20px;
+	overflow: hidden;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+	font-size: 15px;
+	font-weight: 600;
+	touch-action: none;
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
+}
+
+.ogd-float.ogd-float-drag {
+	opacity: 0.85;
+	transform: scale(1.08);
+}
+
+.ogd-float .ogd-float-hide,
+.ogd-float.ogd-float-hide {
+	display: none;
+}
+
+.ogd-float-part {
+	min-width: 44px;
+	height: 40px;
+	padding: 0 14px;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+
+.ogd-float-push:not(.ogd-float-hide) + .ogd-float-pull:not(.ogd-float-hide) {
+	border-left: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+.ogd-float-spinner {
+	display: inline-block;
+	padding: 0 14px;
+	font-size: 20px;
+	animation: ogd-float-spin 1s linear infinite;
+}
+
+@keyframes ogd-float-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}

@@ -4,6 +4,20 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.11.0 - 2026-10-01
+
+### Added
+- **A floating button that shows what is waiting, on phones and tablets.** On a phone the ribbon is hidden in a menu, so the counts on the Push and Pull icons (3.9.0) were never in sight. A small round button now stays on the screen:
+  - **up arrow + number:** changes made on this device that Google Drive does not have yet. Tap it to Push (same as the Push icon).
+  - **down arrow + number:** changes waiting on Google Drive. Only with **Check Google Drive for waiting changes** switched on. Tap it to Pull.
+  - A half only shows while its number is above 0, and the button is gone when nothing is waiting. While a sync runs it shows a turning arrow instead of the numbers. It steps aside while the on-screen keyboard is open. Tapping it during a sync does nothing.
+  - **Moving it:** press and hold for about a third of a second, then drag. When you let go it snaps to the nearer side of the screen and the place is remembered on this device. It starts at the bottom-right, above the bottom bar, clear of the notch. **Reset position** (in the Advanced settings) puts it back.
+  - On by default on phones and tablets, never on a desktop (where the ribbon counts and the status bar work). The Advanced settings have **Show a floating button** to turn it off; on a desktop that setting is not shown.
+
+### Notes
+- Nothing else changed: Push, Pull, the pending list and the ribbon counts are as before. The button only shows the same numbers and runs the same actions as the ribbon icons.
+- Not verified on a real phone: how it looks next to your theme and navigation bar, and the long-press drag on a touch screen. Tests cover the numbers, the tap, the drag with a simulated page, the saved position and the keyboard.
+
 ## 3.10.3 - 2026-10-01
 
 ### Changed

@@ -1,3 +1,4 @@
+import { FloatingBadge, type FloatPos } from './helpers/floating-badge';
 import { advancedSettingGroup, isAdvancedOpen } from './helpers/advanced';
 import { countIgnoredFiles, dropIgnoredMarks, isIgnored } from './helpers/ignore';
 import { checkConnection, checkDriveHost, getDriveClient, unSplitPath } from './helpers/drive';
@@ -69,6 +70,10 @@ interface PluginSettings {
 	pullBadge?: boolean;
 	/** Files and folders sync leaves alone: one pattern per line (see helpers/ignore.ts). */
 	ignorePatterns?: string;
+	/** The floating Push/Pull button on phones: on unless this is false. */
+	floatingBadge?: boolean;
+	/** Where the user dragged it to (see helpers/floating-badge.ts). */
+	floatingBadgePos?: FloatPos;
 	syncConfigFiles?: boolean;
 	/** Sync the themes in the configuration folder. On unless explicitly false. */
 	syncThemes?: boolean;
@@ -125,6 +130,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 	pullRibbonIcon?: HTMLElement;
 	/** Changes waiting on Google Drive, as last counted (only while the opt-in check is on). */
 	waitingOnDrive?: number;
+	/** The floating Push/Pull button (phones and tablets only). */
+	floating?: FloatingBadge;
 	private migrationChecked = false;
 	syncing!: boolean;
 	/** the visibility listener is registered (onload can run again after a token is added) */
@@ -198,6 +205,19 @@ export default class ObsidianGoogleDrive extends Plugin {
 		// Status bar button (desktop only): pending count and a menu of actions.
 		this.statusBar?.remove();
 		this.statusBar = installStatusBar(this);
+		this.floating?.destroy();
+		this.floating = new FloatingBadge(
+			this,
+			{
+				onPush: () => {
+					if (!this.syncing) void push(this);
+				},
+				onPull: () => {
+					if (!this.syncing) void pull(this);
+				},
+			},
+			{ isMobile: Platform.isMobile },
+		);
 		this.updateBadges();
 
 		// Push, Pull and the rest of the commands (the list is in helpers/commands.ts).
@@ -289,6 +309,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	onunload() {
+		this.floating?.destroy();
 		releaseScreen(this);
 		this.clearAutoPushTimer();
 		void this.saveSettings();
@@ -314,11 +335,12 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 	updateStatusBar(spinning?: boolean) {
 		this.statusBar?.update(spinning);
-		this.updateBadges();
+		this.updateBadges(spinning);
 	}
 
 	/** Counts on the two ribbon icons (see helpers/badge.ts). */
-	updateBadges() {
+	updateBadges(busy?: boolean) {
+		this.floating?.update(busy);
 		if (this.settings.pullBadge !== true) this.waitingOnDrive = undefined;
 		const show = this.settings.ribbonBadges !== false;
 		const pending = show ? Object.keys(this.settings.operations).length : 0;
@@ -947,6 +969,35 @@ class SettingsTab extends PluginSettingTab {
 					defaultValue: false,
 				},
 			},
+			// phones and tablets only: the ribbon is hidden there, so the counts get a button of their own
+			...(Platform.isMobile
+				? [
+						{
+							name: 'Show a floating button',
+							desc: 'A small button on the screen that shows how many changes are waiting on this device (up arrow: tap to Push) and, with the Drive check above, on Google Drive (down arrow: tap to Pull). It only shows when something is waiting, and hides while you type. Press and hold it, then drag to move it.',
+							control: {
+								type: 'toggle' as const,
+								key: 'floatingBadge',
+								defaultValue: true,
+							},
+						},
+						{
+							name: 'Position of the floating button',
+							render: (setting: { settingEl: HTMLElement }) => {
+								const row = renderRow(
+									setting,
+									'Position of the floating button',
+									'Put it back at the bottom-right.',
+								);
+								const btn = row.createEl('button', { text: 'Reset position' });
+								btn.addEventListener('click', () => {
+									this.plugin.floating?.resetPosition();
+									new Notice('The floating button is back at the bottom-right.');
+								});
+							},
+						},
+					]
+				: []),
 			{
 				name: 'Ignore list',
 				desc: 'Files and folders that sync leaves alone, one pattern per line. A name like BRAT-log.md or *.tmp matches at any depth. Daily/*.md or /Inbox starts at the vault root. * matches within one name, ** also across folders, ? is one character. A folder covers what is inside it. Lines starting with # are notes. Upper and lower case are the same. Files already on Drive stay where they are. This list is only for this device: use the same list on every device.',
@@ -1172,7 +1223,7 @@ class SettingsTab extends PluginSettingTab {
 				this.plugin.debouncedSaveSettings();
 			}
 		}
-		if (key === 'ribbonBadges') this.plugin.updateBadges();
+		if (key === 'ribbonBadges' || key === 'floatingBadge') this.plugin.updateBadges();
 		if (key === 'pullBadge') {
 			this.plugin.updateBadges();
 			if (value) void refreshWaitingBadge(this.plugin);

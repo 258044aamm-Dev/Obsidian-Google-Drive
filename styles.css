@@ -163,3 +163,31 @@
 	font-weight: 600;
 	color: var(--text-warning, var(--text-error));
 }
+
+/* Counts on the ribbon icons (3.9.0) */
+.ogd-badge-host {
+	position: relative;
+}
+
+.ogd-badge {
+	position: absolute;
+	top: 0;
+	right: 0;
+	min-width: 14px;
+	height: 14px;
+	padding: 0 3px;
+	box-sizing: border-box;
+	border-radius: 7px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 14px;
+	text-align: center;
+	pointer-events: none;
+}
+
+.ogd-badge-hidden,
+.spin > .ogd-badge {
+	display: none;
+}

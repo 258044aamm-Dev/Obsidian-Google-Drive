@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.9.0: counts on the ribbon icons
+
+The Push icon now shows a small number: how many changes are waiting on this device. If you turn on **Check Google Drive for waiting changes** in the settings, the Pull icon also shows how many changes are waiting on Google Drive (asked once at startup and every 15 minutes, never during a sync). Both can be switched off with **Show counts on the ribbon icons**. Nothing else changed.
+
 ## What is new in 3.8.3: Repair sync memory
 
 If a note on a phone never updates and every Pull adds a "Note (Drive date).md" copy, run **Repair sync memory** (command palette or Settings → Commands). It checks the notes this device marks as changed against Drive, tells you what it would do, and asks. Notes the phone is simply behind on get Drive's version, and your old version is kept as "Note (this device date).md". Notes you really edited here are left alone. Nothing is deleted.

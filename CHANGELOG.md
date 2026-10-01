@@ -4,6 +4,18 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.9.0 - 2026-10-01
+
+### Added
+- **Counts on the ribbon icons.**
+  - **Push icon:** a small number shows how many changes are waiting on this device (the pending list), `99+` above 99. The icon's tooltip says it too. It costs nothing and updates as you work. On a phone the ribbon is in the side menu, so the number shows when that menu is open. While a sync runs the icon spins and the number is hidden.
+  - **Pull icon (opt-in, off by default):** how many changes are waiting on Google Drive. Turn on **Check Google Drive for waiting changes** in the settings. The plugin then asks Drive once, about 10 seconds after Obsidian has started, and every 15 minutes while the app is open (two small requests each time: the files changed since the last sync and the removals). It never asks during a sync or while the app is in the background, and it only reads. A Pull sets the number back to 0. The number is a hint: your own uploads are not counted, folders are not counted, and Pull still decides what to do.
+  - Both counts can be switched off together with **Show counts on the ribbon icons** (on by default).
+
+### Notes
+- The count on the Push icon is the length of the pending list, so notes with a stale mark are counted too. **Repair sync memory** (3.8.3) removes marks that are not real.
+- Pull, Push, the guard, conflict copies and the Drive format are unchanged. The desktop status-bar button is unchanged.
+
 ## 3.8.3 - 2026-10-01
 
 ### Added

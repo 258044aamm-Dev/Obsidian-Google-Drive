@@ -19,6 +19,7 @@ import { runSyncDoctor } from './helpers/doctor-command';
 import { installStatusBar, type StatusBar } from './helpers/status-bar';
 import { createKeyStore, loadEncryption, type E2ee, type KeyStore } from './helpers/e2ee';
 import { renderRow } from './helpers/settings-row';
+import { WAITING_CHECK_MS, badgeText, pullIconLabel, pushIconLabel, refreshWaitingBadge, setBadge } from './helpers/badge';
 import { commandsSettingGroup, registerCommands } from './helpers/commands';
 import { openChangePassphrase, openDisableEncryption, openEnableEncryption, openUnlockEncryption } from './helpers/e2ee-ui';
 import { createRestorePointNow, startVaultRestore } from './helpers/history-ui';
@@ -59,6 +60,10 @@ interface PluginSettings {
 	e2eeKid: string;
 	/** The plain Drive link this device had before encryption was turned on, so turning it off can go back. */
 	/** Sync the Obsidian settings files and the other plugins' files. On unless explicitly false (see helpers/config-scope.ts). */
+	/** Show the pending count on the Push ribbon icon (and the Drive count on the Pull icon, if that check is on). On unless explicitly false. */
+	ribbonBadges?: boolean;
+	/** Ask Google Drive now and then how many changes are waiting, and show it on the Pull ribbon icon. Off by default. */
+	pullBadge?: boolean;
 	syncConfigFiles?: boolean;
 	/** Sync the themes in the configuration folder. On unless explicitly false. */
 	syncThemes?: boolean;
@@ -113,6 +118,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 	drive = getDriveClient(this);
 	ribbonIcon!: HTMLElement;
 	pullRibbonIcon?: HTMLElement;
+	/** Changes waiting on Google Drive, as last counted (only while the opt-in check is on). */
+	waitingOnDrive?: number;
 	private migrationChecked = false;
 	syncing!: boolean;
 	/** the visibility listener is registered (onload can run again after a token is added) */
@@ -185,6 +192,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		// Status bar button (desktop only): pending count and a menu of actions.
 		this.statusBar?.remove();
 		this.statusBar = installStatusBar(this);
+		this.updateBadges();
 
 		// Push, Pull and the rest of the commands (the list is in helpers/commands.ts).
 		registerCommands(this, true);
@@ -209,6 +217,16 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 			// Themes and snippets sync by default since 3.7.0: tell a device that already used the plugin, once.
 			maybeShowThemeNotice(this);
+
+			// Opt-in: ask Drive now and then how many changes are waiting (shown on the Pull icon).
+			const firstCheck = window.setInterval(() => {
+				window.clearInterval(firstCheck);
+				void refreshWaitingBadge(this);
+			}, 10_000);
+			this.registerInterval(firstCheck);
+			this.registerInterval(
+				window.setInterval(() => void refreshWaitingBadge(this), WAITING_CHECK_MS),
+			);
 
 			// Sync is manual: nothing is pulled at startup unless the user opted in.
 			if (!this.settings.startupPull) return;
@@ -290,6 +308,17 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 	updateStatusBar(spinning?: boolean) {
 		this.statusBar?.update(spinning);
+		this.updateBadges();
+	}
+
+	/** Counts on the two ribbon icons (see helpers/badge.ts). */
+	updateBadges() {
+		if (this.settings.pullBadge !== true) this.waitingOnDrive = undefined;
+		const show = this.settings.ribbonBadges !== false;
+		const pending = show ? Object.keys(this.settings.operations).length : 0;
+		const waiting = show ? this.waitingOnDrive : undefined;
+		setBadge(this.ribbonIcon, badgeText(pending), pushIconLabel(pending));
+		setBadge(this.pullRibbonIcon, badgeText(waiting), pullIconLabel(waiting));
 	}
 
 	setSpinning(spinning: boolean) {
@@ -531,6 +560,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 			}
 			this.settings.lastSyncedAt = syncedAt;
 			this.settings.changesToken = changesToken;
+			this.waitingOnDrive = this.settings.pullBadge === true ? 0 : undefined; // everything up to now is pulled
 			await seedConfigBaselines(this);
 			pruneSyncState(
 				this,
@@ -847,6 +877,24 @@ class SettingsTab extends PluginSettingTab {
 				},
 			},
 			{
+				name: 'Show counts on the ribbon icons',
+				desc: 'A small number on the Push icon: how many changes are waiting on this device. Costs nothing. On a phone the ribbon is in the side menu.',
+				control: {
+					type: 'toggle',
+					key: 'ribbonBadges',
+					defaultValue: true,
+				},
+			},
+			{
+				name: 'Check Google Drive for waiting changes',
+				desc: 'Off by default. Turn on to show a number on the Pull icon: how many changes are waiting on Google Drive. It asks Drive once when Obsidian has started and then every 15 minutes while the app is open, never during a sync. The number is a hint; Pull decides what to do.',
+				control: {
+					type: 'toggle',
+					key: 'pullBadge',
+					defaultValue: false,
+				},
+			},
+			{
 				name: 'Pull when Obsidian starts',
 				desc: 'Off by default: sync only happens when you press Pull or Push. Turn on to pull from Google Drive every time Obsidian opens (takes effect after restarting Obsidian).',
 				control: {
@@ -1064,6 +1112,11 @@ class SettingsTab extends PluginSettingTab {
 		if (key === 'autoPush') {
 			if (value) this.plugin.resumeAutoPushIfNeeded();
 			else this.plugin.clearAutoPushTimer();
+		}
+		if (key === 'ribbonBadges') this.plugin.updateBadges();
+		if (key === 'pullBadge') {
+			this.plugin.updateBadges();
+			if (value) void refreshWaitingBadge(this.plugin);
 		}
 		if (key === 'enableDiagnostics') {
 			this.plugin.diagnostics.enabled = value as boolean;

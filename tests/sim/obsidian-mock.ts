@@ -129,6 +129,11 @@ export class Plugin {
 		this.commands.set(c.id, c);
 	}
 	registerEvent() {}
+	/** Timers must not keep the test process alive. */
+	registerInterval(id: any) {
+		id?.unref?.();
+		return id;
+	}
 	async loadData() {
 		const p = `${this.app.vault.configDir}/plugins/google-drive-sync/data.json`;
 		if (!(await this.app.vault.adapter.exists(p))) return null;

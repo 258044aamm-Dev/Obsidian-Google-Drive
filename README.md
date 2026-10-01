@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.8.2: all commands on the settings page
+
+The settings page now has a **Commands** section: every command of this plugin with a **Run** button and a search box. Each one says whether it only reads, changes data, or is destructive (Reset and Fix Google Drive paths; both ask before they run). Use it when the command palette is awkward, for example on a phone. Nothing else changed.
+
 ## What is new in 3.8.1: no more "(Drive date)" copies for notes you did not touch
 
 If a note was changed only on another device, a Pull now simply updates it. Before, a phone could take its own Pull for an edit and keep the old note with the new text next to it as "Note (Drive 2026-10-01).md". A note you really edited on this device is still protected: your version stays and Drive's goes to a copy. The Sync doctor now also shows notes that were marked as changed without being changed.

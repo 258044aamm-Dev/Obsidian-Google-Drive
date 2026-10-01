@@ -4,7 +4,6 @@ import { KEEP_OPEN_NOTICE, holdScreenAwake, onVisibilityChange, releaseScreen } 
 import { refreshAccessToken } from './helpers/requests';
 import { pull } from './helpers/pull';
 import { push } from './helpers/push';
-import { reset } from './helpers/reset';
 import {
 	App,
 	debounce,
@@ -16,12 +15,11 @@ import {
 	TAbstractFile,
 	TFile,
 } from 'obsidian';
-import { fixDrivePath } from './helpers/fix_drive_path';
 import { runSyncDoctor } from './helpers/doctor-command';
-import { runCompareActiveNote } from './helpers/compare-note-command';
 import { installStatusBar, type StatusBar } from './helpers/status-bar';
 import { createKeyStore, loadEncryption, type E2ee, type KeyStore } from './helpers/e2ee';
 import { renderRow } from './helpers/settings-row';
+import { commandsSettingGroup, registerCommands } from './helpers/commands';
 import { openChangePassphrase, openDisableEncryption, openEnableEncryption, openUnlockEncryption } from './helpers/e2ee-ui';
 import { createRestorePointNow, startVaultRestore } from './helpers/history-ui';
 import { HISTORY_MAX_DAYS, HISTORY_MIN_DAYS } from './helpers/history';
@@ -154,11 +152,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		}
 
 		// Available before the token is added too: it is how a new user gets started.
-		this.addCommand({
-			id: 'open-tour',
-			name: 'Open the getting-started tour',
-			callback: () => openTour(this),
-		});
+		registerCommands(this, false);
 
 		if (!this.settings.refreshToken) {
 			// A brand-new device is offered the tour once, with a small notice.
@@ -192,61 +186,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 		this.statusBar?.remove();
 		this.statusBar = installStatusBar(this);
 
-		this.addCommand({
-			id: 'push',
-			name: 'Push to Google Drive',
-			callback: () => push(this),
-		});
-
-		this.addCommand({
-			id: 'pull',
-			name: 'Pull from Google Drive',
-			callback: () => pull(this),
-		});
-
-		this.addCommand({
-			id: 'reset',
-			name: 'Reset local vault to Google Drive',
-			callback: () => reset(this),
-		});
-
-		this.addCommand({
-			id: 'fix-drive-path',
-			name: 'Fix Google Drive paths',
-			callback: () => fixDrivePath(this),
-		});
-
-		this.addCommand({
-			id: 'sync-doctor',
-			name: 'Sync doctor (read-only check of this device vs Google Drive)',
-			callback: () => runSyncDoctor(this),
-		});
-
-		this.addCommand({
-			id: 'compare-note-with-drive',
-			name: 'Compare the open note with Google Drive (read-only)',
-			callback: () => runCompareActiveNote(this),
-		});
-
-		this.addCommand({
-			id: 'restore-vault-history',
-			name: 'Restore the whole vault to an earlier restore point (version history)',
-			callback: () => startVaultRestore(this),
-		});
-
-		this.addCommand({
-			id: 'create-restore-point',
-			name: 'Create a restore point now (version history)',
-			callback: () => createRestorePointNow(this),
-		});
-
-		this.addCommand({
-			id: 'export-diagnostics',
-			name: 'Copy sync diagnostics to clipboard',
-			callback: () => {
-				void this.copyDiagnosticsToClipboard();
-			},
-		});
+		// Push, Pull and the rest of the commands (the list is in helpers/commands.ts).
+		registerCommands(this, true);
 
 		this.registerEvent(
 			this.app.workspace.on('quit', () => this.saveSettings()),
@@ -1114,6 +1055,7 @@ class SettingsTab extends PluginSettingTab {
 					});
 				},
 			},
+			commandsSettingGroup(this.plugin),
 		];
 	}
 

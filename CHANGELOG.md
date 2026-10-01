@@ -4,6 +4,21 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.8.2 - 2026-10-01
+
+### Added
+- **A "Commands" section on the settings page.** Every command of this plugin is listed there, with a **Run** button, so you can use them without the command palette (handy on a phone).
+  - A search box filters the list by name, description, command id or group (Sync, Checks, History, Repair, Help).
+  - Each row says what the command does to your data: *Read-only*, *Changes data* or *Destructive*. The two destructive commands (**Reset local vault to Google Drive** and **Fix Google Drive paths**) have a red Run button. Reset asks for confirmation itself; Fix Google Drive paths now also asks when you run it from this list (it clears the list of pending changes). From the command palette it behaves exactly as before.
+  - Without a refresh token only the tour can be run; the other buttons are disabled and say why.
+  - A hint explains where to give a command a hotkey (Settings → Hotkeys, search "Google Drive").
+
+### Changed
+- The commands are defined once, in `helpers/commands.ts`. The command palette and the new settings list both read that list, so they cannot differ. Command ids and names are unchanged (hotkeys keep working). A test fails if a command is registered anywhere else or if an id or name changes.
+
+### Notes
+- Nothing else changed: Push, Pull, conflict copies, the guard, settings files and the Drive format are as in 3.8.1.
+
 ## 3.8.1 - 2026-10-01
 
 ### Fixed

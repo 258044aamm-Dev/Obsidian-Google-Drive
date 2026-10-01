@@ -135,3 +135,26 @@ describe('clockSkewMs', () => {
 	});
 });
 
+
+describe('false pending marks line (3.8.1)', () => {
+	const text = (env: Record<string, unknown>) =>
+		renderReport(buildDoctorReport(base({ environment: env })));
+
+	it('lists notes marked as changed that are identical to the last sync', () => {
+		const out = text({ falseMarks: ['a.md', 'b.md'] });
+		expect(out).toMatch(/2 notes are marked as changed here but identical to the last sync \(a\.md, b\.md\)/);
+		expect(out).toMatch(/false alarm/);
+	});
+
+	it('says nothing when there are none, or when the check was not made', () => {
+		expect(text({ falseMarks: [] })).not.toMatch(/false alarm/);
+		expect(text({})).not.toMatch(/false alarm/);
+		expect(renderReport(buildDoctorReport(base()))).not.toMatch(/Pending list/);
+	});
+
+	it('shortens a long list', () => {
+		const out = text({ falseMarks: ['1', '2', '3', '4', '5', '6', '7'] });
+		expect(out).toMatch(/7 notes are marked/);
+		expect(out).toMatch(/\(1, 2, 3, 4, 5, \.\.\.\)/);
+	});
+});

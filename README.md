@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.8.1: no more "(Drive date)" copies for notes you did not touch
+
+If a note was changed only on another device, a Pull now simply updates it. Before, a phone could take its own Pull for an edit and keep the old note with the new text next to it as "Note (Drive 2026-10-01).md". A note you really edited on this device is still protected: your version stays and Drive's goes to a copy. The Sync doctor now also shows notes that were marked as changed without being changed.
+
 ## What is new in 3.8.0: a steadier connection
 
 - Requests to Google Drive have time limits and are retried a few times, quietly, when the connection is slow or Google is busy. After about a minute of trouble the sync stops and says so; nothing is lost and you can press the button again.

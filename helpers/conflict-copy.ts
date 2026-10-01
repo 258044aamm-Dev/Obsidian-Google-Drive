@@ -1,4 +1,5 @@
 import type ObsidianGoogleDrive from '../main';
+import { forgetSynced } from './sync-state';
 
 /** `2026-09-30`, in the device's local time. */
 export const formatLocalDate = (date: Date) =>
@@ -54,6 +55,8 @@ export const saveConflictCopy = async (
 		const candidate = conflictCopyPath(path, date, attempt);
 		if (!(await adapter.exists(candidate))) {
 			await t.createFile(candidate, driveContent);
+			// the copy is not on Drive: it must not count as "identical to Drive"
+			forgetSynced(t, candidate);
 			t.settings.operations[candidate] = 'create';
 			return { path: candidate, created: true };
 		}
@@ -65,6 +68,7 @@ export const saveConflictCopy = async (
 	// Absurdly many different copies the same day: fall back to a unique name.
 	const unique = conflictCopyPath(path, `${date}-${now.getTime()}`);
 	await t.createFile(unique, driveContent);
+	forgetSynced(t, unique);
 	t.settings.operations[unique] = 'create';
 	return { path: unique, created: true };
 };

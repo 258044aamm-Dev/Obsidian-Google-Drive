@@ -14,6 +14,12 @@ export class FakeVault {
 	configDir = '.obsidian';
 	/** Obsidian fires 'rename' / 'delete' for every descendant of a folder (believed; toggle to test sensitivity). */
 	eventsForChildren = true;
+	/**
+	 * 0 = events arrive while the write call runs (the old simulation). Above 0 = 'create' / 'modify' events
+	 * of file writes arrive that many ms AFTER the call returned, like a file watcher on a phone.
+	 */
+	// `SIM_LATE_EVENTS=30 npx vitest run tests/sim` runs every scenario with late events
+	lateEventsMs = Number(process.env.SIM_LATE_EVENTS ?? 0);
 	name: string;
 	adapter: any;
 	fileManager: any;
@@ -46,7 +52,7 @@ export class FakeVault {
 				this.disk.set(p, { type: 'file', data: new Uint8Array(data.slice(0)), mtime: o?.mtime ?? Date.now() });
 				if (!this.isConfig(p)) {
 					this.refresh();
-					this.emit(existed ? 'modify' : 'create', this.idx.get(p));
+					this.fire(existed ? 'modify' : 'create', this.idx.get(p));
 				}
 			},
 			mkdir: async (p: string) => {
@@ -87,6 +93,11 @@ export class FakeVault {
 	on(evt: string, h: Handler) {
 		(this.handlers[evt] ||= []).push(h);
 		return {};
+	}
+	/** A 'create' / 'modify' caused by a write: late when `lateEventsMs` is set. */
+	private fire(evt: string, obj: any) {
+		if (this.lateEventsMs > 0) setTimeout(() => this.emit(evt, this.withStat(obj)), this.lateEventsMs);
+		else this.emit(evt, obj);
 	}
 	emit(evt: string, ...a: any[]) {
 		if (a[0] === undefined) return; // files in the config folder are not indexed, so Obsidian raises no event for them
@@ -179,12 +190,12 @@ export class FakeVault {
 		this.requireParent(p);
 		this.disk.set(p, { type: 'file', data: new Uint8Array(data.slice(0)), mtime: o?.mtime ?? Date.now() });
 		this.refresh();
-		this.emit('create', this.idx.get(p));
+		this.fire('create', this.idx.get(p));
 		return this.idx.get(p);
 	}
 	async modifyBinary(f: TFile, data: ArrayBuffer, o?: { mtime?: number }) {
 		this.disk.set(f.path, { type: 'file', data: new Uint8Array(data.slice(0)), mtime: o?.mtime ?? Date.now() });
-		this.emit('modify', f);
+		this.fire('modify', f);
 	}
 	async modify(f: TFile, text: string) {
 		return this.modifyBinary(f, enc(text));

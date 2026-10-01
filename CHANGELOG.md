@@ -4,6 +4,24 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.8.1 - 2026-10-01
+
+### Fixed
+- **Pull made a "Note (Drive YYYY-MM-DD).md" copy for every note that was only changed on the other device.** Reported on a phone: desktop, phone and Drive were identical, a note was edited on the desktop and pushed, nothing was touched on the phone, and the phone's Pull kept the old note and saved the new text as a copy.
+  - **Cause (reproduced in the simulation, not yet on a real phone):** after a Pull wrote a note, Obsidian reported that file change *later* (a phone reports file changes from its file watcher, after the write call has returned). The plugin took the report for an edit made on the phone and marked the note as changed; the next Pull saw "changed on both devices". The mark was only checked for existing, never against the note's content.
+  - **Pull now judges by content.** A note marked `create` or `modify` whose content is exactly what it was at the last sync (same content fingerprint) is not an edit: the mark is dropped and the Drive version is taken, with no copy. A real edit, an edit with a remembered state that differs, or a note with no remembered state behaves exactly as before (your version is kept, Drive's goes to a copy).
+  - A late report can still leave a mark on a note that did not change. That is harmless: the next Pull ignores it (as above), and a Push of such a note uploads the same content it already has.
+  - The Sync doctor lists notes that are marked as changed but identical to the last sync ("Pending list ... false alarm"), read-only.
+  - The diagnostics now say why a copy was made (which rule fired, which mark, what was remembered) and when a false mark was ignored.
+  - Nothing is lost by this: the shortcut only applies to a note that equals what Drive had at the last sync, and Drive's version history keeps that content.
+
+### Changed
+- Test suite: the known-failing scenario "S5b a phone that inherited stale pending ops never overwrites a newer desktop edit" (it was marked as an expected failure) now passes and is a normal test. Its encrypted variant had only "failed" because the test could not find the file; it now looks it up the right way. The simulated vault can deliver file reports late (`lateEventsMs`; `SIM_LATE_EVENTS=30 npx vitest run tests/sim` runs everything that way; many older scenarios are timing-sensitive in that mode, with or without this fix: 132 failures before, 69 after).
+
+### Notes
+- Nothing else changed: Push, the guard, conflict copies for real edits, settings files and the Drive format are unchanged. A Push still uploads a note that was saved again with identical content, as before.
+- Not verified on a real device: whether Obsidian on your phone reports file changes late in exactly this way. If copies still appear, run the Sync doctor before the Pull and "Copy diagnostics" after it; the new entries show the reason.
+
 ## 3.8.0 - 2026-10-01
 
 ### Added

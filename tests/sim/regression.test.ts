@@ -357,7 +357,7 @@ describe.each([
 		expect(same(desktop.tree(), mobile.tree())).toBe('IDENTICAL');
 	});
 
-	it.fails('S5b a phone that inherited stale pending ops never overwrites a newer desktop edit', async () => {
+	it('S5b a phone that inherited stale pending ops never overwrites a newer desktop edit', async () => {
 		const { w, desktop, mobile } = await setup();
 		// emulate README-style bootstrap: phone's data.json carries desktop's stale pending ops
 		for (const p of ['Inbox/b.md', 'Inbox/a.md']) mobile.plugin.settings.operations[p] = 'modify';
@@ -369,7 +369,7 @@ describe.each([
 		await mobile.pull();
 		await mobile.vault.modify(mobile.vault.getFileByPath('Inbox/c-none.md') as TFile, 'x').catch(() => {});
 		await mobile.push();
-		const drive = [...w.drive.files.values()].find((f) => !f.trashed && f.properties.path === 'Inbox/b.md')!;
-		expect(dec(drive.content!)).toBe('NEW TEXT FROM DESKTOP');
+		const drive = [...w.drive.files.values()].find((f) => !f.trashed && w.drive.shown(f) === 'Inbox/b.md')!;
+		expect(dec((await w.drive.contentOf(drive))!)).toBe('NEW TEXT FROM DESKTOP');
 	});
 });

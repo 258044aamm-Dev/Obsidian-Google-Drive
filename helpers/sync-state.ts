@@ -164,6 +164,71 @@ export const locallyEdited = async (
 	}
 };
 
+/**
+ * True when the note is, byte for byte, what it was when it was last known to match Drive. A
+ * "changed" mark on such a note is not an edit (on a phone Obsidian reports the files that a
+ * Pull wrote some time AFTER the write, and those reports were taken for edits).
+ *  - nothing remembered: false (unknown: the caller keeps its old behaviour);
+ *  - a remembered content fingerprint: the current content must give the same one;
+ *  - no fingerprint (state from 3.6.2): time and size must both be unchanged.
+ * Never throws.
+ */
+export const unchangedSinceSync = async (
+	t: ObsidianGoogleDrive,
+	file: { path: string; stat?: { mtime: number; size: number } },
+	readLocal: () => Promise<ArrayBuffer>,
+): Promise<boolean> => {
+	try {
+		const base = t.settings.syncedFiles?.[file.path];
+		if (!base || !file.stat) return false;
+		if (base.h) {
+			const now = await hashOf(await readLocal());
+			return now !== undefined && now === base.h;
+		}
+		return base.m === file.stat.mtime && base.s === file.stat.size;
+	} catch {
+		return false;
+	}
+};
+
+/** The paths Drive knows (the saved id map), as a set. Cached by size: it only filters. */
+let knownCache: { source: object; size: number; set: Set<string> } | undefined;
+export const knownToDrive = (t: ObsidianGoogleDrive, path: string) => {
+	const map = t.settings.driveIdToPath;
+	const size = Object.keys(map).length;
+	if (!knownCache || knownCache.source !== map || knownCache.size !== size) {
+		knownCache = { source: map, size, set: new Set(Object.values(map)) };
+	}
+	return knownCache.set.has(path);
+};
+
+/**
+ * Notes marked `create` / `modify` that Drive knows and that are exactly what they were at the
+ * last sync: the marks are false. Read-only (the Sync doctor shows them; Pull ignores them when it
+ * meets such a note). The note holds nothing that Drive did not have.
+ */
+export const findFalseMarks = async (
+	t: ObsidianGoogleDrive,
+): Promise<string[]> => {
+	const found: string[] = [];
+	try {
+		const { vault } = t.app;
+		for (const [path, operation] of Object.entries(t.settings.operations)) {
+			if (operation !== 'modify' && operation !== 'create') continue;
+			if (path === vault.configDir || path.startsWith(vault.configDir + '/')) continue;
+			if (isOwnPluginPath(t, path) || !knownToDrive(t, path)) continue;
+			const file = vault.getFileByPath(path);
+			if (!file) continue;
+			if (await unchangedSinceSync(t, file, () => vault.readBinary(file))) {
+				found.push(path);
+			}
+		}
+	} catch {
+		// nothing is dropped when in doubt
+	}
+	return found.sort();
+};
+
 export const hasBaseline = (t: ObsidianGoogleDrive, path: string) =>
 	!!t.settings.syncedFiles?.[path];
 

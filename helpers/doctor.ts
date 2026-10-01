@@ -38,6 +38,8 @@ export interface DoctorEnvironment {
 	obsidianTrashOption?: string;
 	/** This device's clock minus Google's clock in milliseconds, or null when it could not be measured. */
 	clockSkewMs?: number | null;
+	/** Notes marked as changed on this device that are exactly what they were at the last sync (false alarms). */
+	falseMarks?: string[];
 	/** How long one small request to Google took in milliseconds, or null when it failed. */
 	responseMs?: number | null;
 	/** Notes written after the last sync that are not in the pending list (not yet compared with Drive). */
@@ -226,6 +228,12 @@ export const buildDoctorReport = (input: DoctorInput): DoctorReport => {
 		} else {
 			environmentLines.push('Clock check: this device agrees with Google (within a minute).');
 		}
+	}
+	if (env?.falseMarks && env.falseMarks.length > 0) {
+		const shown = env.falseMarks.slice(0, 5).join(', ');
+		environmentLines.push(
+			`Pending list: ${env.falseMarks.length} note${env.falseMarks.length === 1 ? ' is' : 's are'} marked as changed here but identical to the last sync (${shown}${env.falseMarks.length > 5 ? ', ...' : ''}). This is a false alarm: Pull takes the Drive version for them without making a "(Drive date)" copy.`,
+		);
 	}
 	if (env && env.responseMs !== undefined) {
 		environmentLines.push(

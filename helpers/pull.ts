@@ -26,6 +26,7 @@ import {
 	locallyEdited,
 	recordSynced,
 	stampOf,
+	unchangedSinceSync,
 } from './sync-state';
 import {
 	countRemoteChanges,
@@ -465,12 +466,23 @@ export const pull = async (
 
 			let completed = 0;
 
+			// Why a copy was made (diagnostics only): which rule fired and what was remembered.
+			const recordConflictReason = (path: string, reason: string) => {
+				const base = t.settings.syncedFiles?.[path];
+				t.diagnostics.record({
+					phase: 'download',
+					operation: 'conflict-copy',
+					message: `Kept the local note, saved the Drive version as a copy (${reason}; mark: ${t.settings.operations[path] ?? 'none'}; remembered state: ${base ? (base.h ? 'with fingerprint' : 'without fingerprint') : 'none'})`,
+				});
+			};
+
 			// A note changed both here (not pushed yet) and on Drive keeps this device's
 			// version in place and saves the Drive version next to it as a copy.
 			const keepDriveVersionAsCopy = async (
 				file: FileMetadata,
 				path: string,
 				localFile: TFile | boolean,
+				reason = 'pending-mark',
 			) => {
 				if (!(localFile instanceof TFile)) return;
 				if (path === vault.configDir || path.startsWith(vault.configDir + '/')) {
@@ -483,7 +495,10 @@ export const pull = async (
 					return;
 				}
 				const saved = await saveConflictCopy(t, path, driveContent);
-				if (saved.created) conflictCopies.push(saved.path);
+				if (saved.created) {
+					conflictCopies.push(saved.path);
+					recordConflictReason(path, reason);
+				}
 			};
 
 			// Encrypted vault: a file that fails its integrity check is not written; the others still download.
@@ -494,9 +509,30 @@ export const pull = async (
 					const localFile =
 						vault.getFileByPath(path) ||
 						(await adapter.exists(path));
-					const operation = t.settings.operations[path];
+					let operation = t.settings.operations[path];
 
 					completed++;
+
+					// A `create` / `modify` mark on a note that is exactly what it was at the last sync
+					// is not an edit made here (Obsidian reports the files a Pull wrote later, and that
+					// was taken for one): take the Drive version instead of keeping an old copy apart.
+					if (
+						localFile instanceof TFile &&
+						(operation === 'modify' || operation === 'create') &&
+						path !== vault.configDir &&
+						!path.startsWith(vault.configDir + '/') &&
+						(await unchangedSinceSync(t, localFile, () =>
+							adapter.readBinary(path),
+						))
+					) {
+						t.diagnostics.record({
+							phase: 'download',
+							operation: 'false-pending-mark',
+							message: `Pending "${operation}" mark ignored: the note is unchanged since the last sync`,
+						});
+						delete t.settings.operations[path];
+						operation = undefined;
+					}
 
 					if (localFile && operation === 'modify') {
 						await keepDriveVersionAsCopy(file, path, localFile);
@@ -530,7 +566,10 @@ export const pull = async (
 							return;
 						}
 						const saved = await saveConflictCopy(t, path, driveContent);
-						if (saved.created) conflictCopies.push(saved.path);
+						if (saved.created) {
+							conflictCopies.push(saved.path);
+							recordConflictReason(path, 'edited-here');
+						}
 						t.settings.operations[path] = 'modify';
 						return;
 					}

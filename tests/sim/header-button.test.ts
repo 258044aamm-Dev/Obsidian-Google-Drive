@@ -67,7 +67,7 @@ const setup = (opts: { views?: any[]; settings?: Record<string, unknown> } = {})
 		},
 	};
 	const calls = { push: 0, pull: 0 };
-	const header = new HeaderButton(t, { onPush: () => calls.push++, onPull: () => calls.pull++ }, { isMobile: true });
+	const header = new HeaderButton(t, { onPush: () => calls.push++, onPull: () => calls.pull++ });
 	return { t, header, views, handlers, calls };
 };
 const ops = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`f${i}.md`, {}]));
@@ -211,16 +211,6 @@ describe('the menu', () => {
 });
 
 describe('switched off, a desktop, and unloading', () => {
-	it('adds nothing on a desktop', () => {
-		const s = setup();
-		const t = s.t;
-		const header = new HeaderButton(t, { onPush() {}, onPull() {} }, { isMobile: false });
-		header.start();
-		header.refresh();
-		header.update(true);
-		expect(s.views[0].added).toHaveLength(0);
-	});
-
 	it('adds nothing while the switch is off, and takes the icon away when it is turned off', () => {
 		const off = setup({ settings: { headerButton: false } });
 		off.header.start();
@@ -254,6 +244,6 @@ describe('switched off, a desktop, and unloading', () => {
 		expect(() => s.header.update(true)).not.toThrow();
 		const bare = setup();
 		bare.t.app.workspace = {};
-		expect(() => new HeaderButton(bare.t, { onPush() {}, onPull() {} }, { isMobile: true }).refresh()).not.toThrow();
+		expect(() => new HeaderButton(bare.t, { onPush() {}, onPull() {} }).refresh()).not.toThrow();
 	});
 });

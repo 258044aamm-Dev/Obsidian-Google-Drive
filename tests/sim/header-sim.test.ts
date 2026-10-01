@@ -105,13 +105,22 @@ describe('the header icon on a phone', () => {
 		mobile.plugin.syncing = false;
 	});
 
-	it('adds nothing on a desktop', async () => {
+	it('is added on a desktop too, with the same number', async () => {
 		const { mobile } = await setup();
+		expect(Platform.isMobile).toBe(false);
 		const view = note();
 		mobile.plugin.app.workspace.iterateAllLeaves = (cb: (leaf: any) => void) => cb({ view });
 		mobile.plugin.header.refresh();
+		expect(view.icons).toHaveLength(1);
 		await edit(mobile, 'Inbox/a.md', 'a2');
-		expect(view.icons).toHaveLength(0);
+		expect(number(view.icons[0]!.el)).toBe('1');
+	});
+
+	it('can be switched off, and is taken away at once', async () => {
+		const { mobile, view } = await phone();
+		mobile.plugin.settings.headerButton = false;
+		mobile.plugin.updateBadges();
+		expect(view.icons[0]!.el.removed).toBe(true);
 	});
 
 	it('is removed when the plugin unloads', async () => {
@@ -120,16 +129,17 @@ describe('the header icon on a phone', () => {
 		expect(view.icons[0]!.el.removed).toBe(true);
 	});
 
-	it('the settings page offers its switch only on a phone, and no floating-button settings any more', async () => {
+	it('the settings page offers its switch on a desktop and on a phone, and no floating-button settings', async () => {
 		const { mobile } = await setup();
 		const { setAdvancedOpen } = await import('../../helpers/advanced');
 		setAdvancedOpen(true);
 		const keys = (items: any[]): string[] => items.flatMap((i) => [i.control?.key, ...keys(i.items ?? [])]).filter(Boolean);
-		expect(keys(mobile.plugin.settingTab.getSettingDefinitions())).not.toContain('headerButton');
-		Platform.isMobile = true;
-		const k = keys(mobile.plugin.settingTab.getSettingDefinitions());
-		expect(k).toContain('headerButton');
-		expect(k).not.toContain('floatingBadge');
+		for (const isMobile of [false, true]) {
+			Platform.isMobile = isMobile;
+			const k = keys(mobile.plugin.settingTab.getSettingDefinitions());
+			expect(k).toContain('headerButton');
+			expect(k).not.toContain('floatingBadge');
+		}
 		setAdvancedOpen(false);
 	});
 });

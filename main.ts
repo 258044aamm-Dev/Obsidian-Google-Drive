@@ -70,7 +70,7 @@ interface PluginSettings {
 	pullBadge?: boolean;
 	/** Files and folders sync leaves alone: one pattern per line (see helpers/ignore.ts). */
 	ignorePatterns?: string;
-	/** The Drive icon in the note header on phones: on unless this is false. */
+	/** The Drive icon in the note header: on unless this is false. */
 	headerButton?: boolean;
 	syncConfigFiles?: boolean;
 	/** Sync the themes in the configuration folder. On unless explicitly false. */
@@ -128,7 +128,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	pullRibbonIcon?: HTMLElement;
 	/** Changes waiting on Google Drive, as last counted (only while the opt-in check is on). */
 	waitingOnDrive?: number;
-	/** The Drive icon in the note header (phones and tablets only). */
+	/** The Drive icon in the note header. */
 	header?: HeaderButton;
 	private migrationChecked = false;
 	syncing!: boolean;
@@ -214,7 +214,6 @@ export default class ObsidianGoogleDrive extends Plugin {
 					if (!this.syncing) void pull(this);
 				},
 			},
-			{ isMobile: Platform.isMobile },
 		);
 		this.header.start();
 		this.updateBadges();
@@ -968,20 +967,15 @@ class SettingsTab extends PluginSettingTab {
 					defaultValue: false,
 				},
 			},
-			// phones and tablets only: the ribbon is hidden there, so Push and Pull get an icon in the note header
-			...(Platform.isMobile
-				? [
-						{
-							name: 'Show a Drive icon in the note header',
-							desc: 'A small icon next to the three-dots button at the top of every note. Tap it to choose Push or Pull. A number on it says how many changes are waiting (on this device and, with the Drive check above, on Google Drive).',
-							control: {
-								type: 'toggle' as const,
-								key: 'headerButton',
-								defaultValue: true,
-							},
-						},
-					]
-				: []),
+			{
+				name: 'Show a Drive icon in the note header',
+				desc: 'A small icon next to the three-dots button at the top of every note. Click or tap it to choose Push or Pull. A number on it says how many changes are waiting (on this device and, with the Drive check above, on Google Drive). On a phone it is the way to see the counts, because the ribbon is hidden there.',
+				control: {
+					type: 'toggle',
+					key: 'headerButton',
+					defaultValue: true,
+				},
+			},
 			{
 				name: 'Ignore list',
 				desc: 'Files and folders that sync leaves alone, one pattern per line. A name like BRAT-log.md or *.tmp matches at any depth. Daily/*.md or /Inbox starts at the vault root. * matches within one name, ** also across folders, ? is one character. A folder covers what is inside it. Lines starting with # are notes. Upper and lower case are the same. Files already on Drive stay where they are. This list is only for this device: use the same list on every device.',

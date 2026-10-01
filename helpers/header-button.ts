@@ -1,9 +1,9 @@
 /**
- * A Drive icon in the header of every note, on phones and tablets (3.12.0).
+ * A Drive icon in the header of every note (3.12.0 on phones and tablets, 3.13.0 also on a desktop).
  *
  * On a phone the ribbon is hidden in a menu, so the counts on the Push and Pull icons (3.9.0) are never
  * in sight. This icon sits in the header, next to the three-dots button, so it is visible without
- * opening any menu. Tapping it opens a small menu with Push and Pull, and the user picks either one. Both
+ * opening any menu. A desktop gets the same icon, so both work the same way. Tapping it opens a small menu with Push and Pull, and the user picks either one. Both
  * are always offered. A small number on the icon says how many changes are waiting (on this device, plus
  * on Google Drive when the Drive check is on). While a sync runs the icon turns and the menu is greyed out.
  *
@@ -48,16 +48,14 @@ export class HeaderButton {
 	constructor(
 		private t: ObsidianGoogleDrive,
 		private handlers: HeaderHandlers,
-		private env: { isMobile: boolean },
 	) {}
 
 	private enabled() {
-		return this.env.isMobile && this.t.settings.headerButton !== false;
+		return this.t.settings.headerButton !== false;
 	}
 
-	/** Starts following the open views. Does nothing on a desktop. */
+	/** Starts following the open views. */
 	start() {
-		if (!this.env.isMobile) return;
 		const ws = this.t.app.workspace;
 		this.t.registerEvent(ws.on('layout-change', () => this.refresh()));
 		this.t.registerEvent(ws.on('active-leaf-change', () => this.refresh()));

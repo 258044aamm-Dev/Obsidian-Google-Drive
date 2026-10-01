@@ -4,6 +4,14 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.13.0 - 2026-10-01
+
+### Added
+- **The Drive icon in the note header (3.12.0) now also shows on a desktop.** Click it and the same small menu opens with **Push** and **Pull**, both always offered, with the same number on the icon and the same turning arrow during a sync. It sits next to the three-dots button of every note, on its left, beside the other note icons. On by default; the Advanced setting **Show a Drive icon in the note header** turns it off, and is now shown on every device.
+
+### Notes
+- Nothing else changed: the ribbon icons, the status bar button and the commands work as before.
+
 ## 3.12.0 - 2026-10-01
 
 ### Changed

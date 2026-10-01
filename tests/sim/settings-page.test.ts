@@ -25,6 +25,7 @@ const KEYS = [
 	'deleteToTrash',
 	'ribbonBadges',
 	'pullBadge',
+	'headerButton',
 	'ignorePatterns',
 	'syncConfigFiles',
 	'syncThemes',

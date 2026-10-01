@@ -49,6 +49,8 @@ import {
 	PLUGIN_COMMANDS,
 	commandsInDisplayOrder,
 	commandsSettingGroup,
+	isCommandsOpen,
+	setCommandsOpen,
 	describeCommand,
 	matchesQuery,
 	registerCommands,
@@ -215,6 +217,8 @@ describe('search and display', () => {
 });
 
 describe('the Commands section of the settings page', () => {
+	beforeEach(() => setCommandsOpen(true)); // the rows are only there when it is unfolded (see the folding tests below)
+
 	it('is a searchable group with a hotkeys hint and one row per command', () => {
 		const group = commandsSettingGroup(plugin());
 		expect(group.type).toBe('group');
@@ -306,5 +310,72 @@ describe('Run from the settings page', () => {
 		await runFromSettings(plugin(), find('reset'), ask);
 		expect(ask).not.toHaveBeenCalled();
 		expect(actions.reset).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('folding the Commands section', () => {
+	type Btn = { icon?: string; tip?: string; click?: () => void };
+	const pressable = () => {
+		const state: Btn = {};
+		const component = {
+			setIcon(icon: string) {
+				state.icon = icon;
+				return component;
+			},
+			setTooltip(tip: string) {
+				state.tip = tip;
+				return component;
+			},
+			onClick(cb: () => void) {
+				state.click = cb;
+				return component;
+			},
+		};
+		return { state, component };
+	};
+	const header = (redraw = () => {}) => {
+		const group = commandsSettingGroup(plugin(), redraw);
+		const { state, component } = pressable();
+		expect(group.extraButtons).toHaveLength(1);
+		group.extraButtons![0]!(component as never);
+		return { group, state };
+	};
+
+	it('is folded by default: only the heading and a button, no search box and no rows', () => {
+		setCommandsOpen(false);
+		expect(isCommandsOpen()).toBe(false);
+		const { group, state } = header();
+		expect(group.heading).toBe('Commands');
+		expect(group.items).toEqual([]);
+		expect(group.search).toBeUndefined();
+		expect(state.icon).toBe('chevron-right');
+		expect(state.tip).toBe('Show the commands');
+	});
+
+	it('the button unfolds it and draws the page again; pressed again it folds it', () => {
+		setCommandsOpen(false);
+		const redraw = vi.fn();
+		let { state } = header(redraw);
+		state.click!();
+		expect(redraw).toHaveBeenCalledTimes(1);
+		expect(isCommandsOpen()).toBe(true);
+		const opened = header(redraw);
+		expect(opened.group.items).toHaveLength(PLUGIN_COMMANDS.length + 1);
+		expect(opened.group.search).toBeTruthy();
+		expect(opened.state.icon).toBe('chevron-down');
+		expect(opened.state.tip).toBe('Hide the commands');
+		opened.state.click!();
+		expect(redraw).toHaveBeenCalledTimes(2);
+		expect(isCommandsOpen()).toBe(false);
+		({ state } = header(redraw));
+		expect(state.icon).toBe('chevron-right');
+	});
+
+	it('keeps the same commands, order and search once unfolded', () => {
+		setCommandsOpen(true);
+		const { group } = header();
+		const rows = group.items!.slice(1) as unknown as Row[];
+		expect(rows.map((r) => r.aliases[0]).sort()).toEqual(PLUGIN_COMMANDS.map((c) => c.id).sort());
+		expect(rows.filter((r) => group.search!.match(r, 'doctor')).map((r) => r.aliases[0])).toContain('sync-doctor');
 	});
 });

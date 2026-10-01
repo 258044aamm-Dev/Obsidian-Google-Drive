@@ -4,6 +4,11 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.10.1 - 2026-10-01
+
+### Changed
+- **The Commands section of the settings page can be folded, and starts folded.** It shows the heading "Commands" and a small arrow button; press it to show the search box and the list of commands, press it again to hide them. The choice is kept while Obsidian is running. The commands themselves, their order, the search, the Run buttons and the command palette are unchanged.
+
 ## 3.10.0 - 2026-10-01
 
 ### Added

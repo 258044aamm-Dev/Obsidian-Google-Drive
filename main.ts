@@ -1138,7 +1138,7 @@ class SettingsTab extends PluginSettingTab {
 					});
 				},
 			},
-			commandsSettingGroup(this.plugin),
+			commandsSettingGroup(this.plugin, () => this.update()),
 		];
 	}
 

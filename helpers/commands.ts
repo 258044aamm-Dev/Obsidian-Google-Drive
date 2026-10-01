@@ -248,53 +248,88 @@ export const runFromSettings = async (
 	await command.run(t);
 };
 
-/** The "Commands" section of the settings page: a searchable list, one row per command. */
-export const commandsSettingGroup = (t: ObsidianGoogleDrive): SettingDefinitionGroup => ({
-	type: 'group',
-	heading: 'Commands',
-	cls: 'ogd-commands',
-	search: {
-		placeholder: 'Search the commands of this plugin',
-		match: (def: SettingDefinition, query: string) =>
-			matchesQuery(
-				`${def.name} ${typeof def.desc === 'string' ? def.desc : ''} ${(def.aliases ?? []).join(' ')}`,
-				query,
-			),
-	},
-	items: [
-		{
-			name: 'Hotkeys',
-			searchable: false,
-			render: (setting) => {
-				renderRow(
-					setting,
-					'Hotkeys',
-					'Every command below is also in the command palette. To give one a key, open Settings → Hotkeys and search for "Google Drive".',
-				);
-			},
-		},
-		...commandsInDisplayOrder().map(
-			(command): SettingDefinition => ({
-				name: command.name,
-				desc: describeCommand(command),
-				aliases: [command.id, command.group, command.risk],
-				render: (setting) => {
-					const needsToken = command.needsToken && !t.settings.refreshToken;
-					const controls = renderRow(
-						setting,
-						command.name,
-						needsToken
-							? `${describeCommand(command)} Needs your refresh token first.`
-							: describeCommand(command),
-					);
-					const button = controls.createEl('button', { text: 'Run' });
-					if (command.risk === 'destructive') button.addClass('mod-warning');
-					if (needsToken) button.disabled = true;
-					button.addEventListener('click', () => {
-						void runFromSettings(t, command);
+/**
+ * Whether the Commands section is unfolded. Collapsed by default; the choice is kept while Obsidian runs
+ * (so a command that redraws the page does not fold it again).
+ */
+let commandsOpen = false;
+export const isCommandsOpen = () => commandsOpen;
+export const setCommandsOpen = (open: boolean) => {
+	commandsOpen = open;
+};
+
+/**
+ * The "Commands" section of the settings page: a searchable list, one row per command.
+ * Folded, it is only the heading with a button; unfolded, the search box and the rows appear.
+ * `redraw` draws the settings page again after the button was pressed.
+ */
+export const commandsSettingGroup = (
+	t: ObsidianGoogleDrive,
+	redraw: () => void = () => {},
+): SettingDefinitionGroup => {
+	const open = commandsOpen;
+	return {
+		type: 'group',
+		heading: 'Commands',
+		cls: 'ogd-commands',
+		extraButtons: [
+			(button) => {
+				button
+					.setIcon(open ? 'chevron-down' : 'chevron-right')
+					.setTooltip(open ? 'Hide the commands' : 'Show the commands')
+					.onClick(() => {
+						commandsOpen = !commandsOpen;
+						redraw();
 					});
-				},
-			}),
-		),
-	],
-});
+			},
+		],
+		...(open && {
+			search: {
+				placeholder: 'Search the commands of this plugin',
+				match: (def: SettingDefinition, query: string) =>
+					matchesQuery(
+						`${def.name} ${typeof def.desc === 'string' ? def.desc : ''} ${(def.aliases ?? []).join(' ')}`,
+						query,
+					),
+			},
+		}),
+		items: open ? commandItems(t) : [],
+	};
+};
+
+const commandItems = (t: ObsidianGoogleDrive): SettingDefinition[] => [
+	{
+		name: 'Hotkeys',
+		searchable: false,
+		render: (setting) => {
+			renderRow(
+				setting,
+				'Hotkeys',
+				'Every command below is also in the command palette. To give one a key, open Settings → Hotkeys and search for "Google Drive".',
+			);
+		},
+	},
+	...commandsInDisplayOrder().map(
+		(command): SettingDefinition => ({
+			name: command.name,
+			desc: describeCommand(command),
+			aliases: [command.id, command.group, command.risk],
+			render: (setting) => {
+				const needsToken = command.needsToken && !t.settings.refreshToken;
+				const controls = renderRow(
+					setting,
+					command.name,
+					needsToken
+						? `${describeCommand(command)} Needs your refresh token first.`
+						: describeCommand(command),
+				);
+				const button = controls.createEl('button', { text: 'Run' });
+				if (command.risk === 'destructive') button.addClass('mod-warning');
+				if (needsToken) button.disabled = true;
+				button.addEventListener('click', () => {
+					void runFromSettings(t, command);
+				});
+			},
+		}),
+	),
+];

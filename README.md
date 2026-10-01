@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.10.1: the Commands section folds
+
+The **Commands** section of the settings page now starts folded. Press the arrow next to its heading to show the search box and the commands, and press it again to hide them.
+
 ## What is new in 3.10.0: ignore list
 
 The settings have a new **Ignore list**: one pattern per line for files and folders that sync should leave alone, for example `BRAT-log.md` (a file every device writes to) or `Archive/`. Ignored files are never uploaded, never deleted on Drive, never pulled and never a conflict; files already on Drive stay there. A name matches at any depth, `Daily/*.md` or `/Inbox` start at the vault root, `*` stays inside one name, `**` crosses folders, and a folder covers what is inside it. The list is per device, so use the same one everywhere. With an empty list nothing changes.

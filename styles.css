@@ -187,6 +187,7 @@
 	pointer-events: none;
 }
 
+.ogd-hidden,
 .ogd-badge-hidden,
 .spin > .ogd-badge {
 	display: none;

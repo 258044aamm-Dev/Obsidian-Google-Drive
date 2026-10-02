@@ -34,7 +34,13 @@ export const headerLabel = (pending: number, waiting: number | undefined) => {
 export interface HeaderHandlers {
 	onPush: () => void;
 	onPull: () => void;
+	/** Read-only checks (3.14.0): when given, they are offered under Push and Pull. */
+	onCompareNote?: () => void;
+	onCompareVault?: () => void;
 }
+
+export const COMPARE_NOTE_LABEL = 'Compare this note with Google Drive';
+export const COMPARE_VAULT_LABEL = 'Compare the whole vault with Google Drive';
 
 interface ActionView {
 	addAction?: (icon: string, title: string, cb: (evt: MouseEvent) => unknown) => HTMLElement;
@@ -126,7 +132,7 @@ export class HeaderButton {
 		}
 	}
 
-	/** The menu of the icon: Push and Pull, both always offered. */
+	/** The menu of the icon: Push and Pull, both always offered, then the read-only compare checks. */
 	open(evt: MouseEvent) {
 		const show = this.t.settings.ribbonBadges !== false;
 		const pending = show ? Object.keys(this.t.settings.operations).length : 0;
@@ -147,6 +153,26 @@ export class HeaderButton {
 				.setDisabled(running)
 				.onClick(() => this.handlers.onPull()),
 		);
+		const { onCompareNote, onCompareVault } = this.handlers;
+		if (onCompareNote || onCompareVault) menu.addSeparator();
+		if (onCompareNote) {
+			menu.addItem((item) =>
+				item
+					.setTitle(COMPARE_NOTE_LABEL)
+					.setIcon('file-search')
+					.setDisabled(running)
+					.onClick(() => onCompareNote()),
+			);
+		}
+		if (onCompareVault) {
+			menu.addItem((item) =>
+				item
+					.setTitle(COMPARE_VAULT_LABEL)
+					.setIcon('git-compare')
+					.setDisabled(running)
+					.onClick(() => onCompareVault()),
+			);
+		}
 		menu.showAtMouseEvent(evt);
 	}
 

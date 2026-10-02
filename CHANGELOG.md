@@ -4,6 +4,16 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.14.0 - 2026-10-02
+
+### Added
+- **Compare with Google Drive, in the header menu.** Tap the Drive icon in the note header: under Push and Pull there are now two read-only checks. **Compare this note with Google Drive** is the existing single-note check. **Compare the whole vault with Google Drive** is new, and also a command ("Compare the whole vault with Google Drive (read-only)", group Checks) that can have a hotkey.
+- **What the whole-vault check does.** It asks Drive for one list of files (size, checksum, modified time) and compares it with this device. The result window shows how many files are identical and lists the files that **differ** (with both sizes and times, which side is newer by time, and whether the change is waiting in the pending list), the files **only on this device** and the files **only on Google Drive**, and a **Copy report** button.
+- **Quick first, exact on request.** Without encryption the quick stage is already exact: a different size or checksum is a difference, an equal checksum is the same file, and nothing is downloaded. With end-to-end encryption Drive holds only encrypted bytes, so files of equal size stay in "Not decided yet" until you press **Exact check**. That button tells you how many files and how much data it will download, downloads them a few at a time with progress, can be stopped, and compares the real content after decrypting.
+- It changes nothing: only reads on this device and GET requests to Drive. Notes, Drive, the pending list and the saved sync state stay as they were, and the number on the icon is not touched.
+- Left out of the comparison, like in Push and Pull: folders, the ignore list, this plugin's own folder, Obsidian's settings files (the `.obsidian` folder) and Google Docs files.
+- The result is a snapshot of that moment.
+
 ## 3.13.3 - 2026-10-02
 
 ### Changed

@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.14.0: compare this device with Google Drive
+
+Tap the Drive icon in the note header and choose **Compare the whole vault with Google Drive** (or **Compare this note with Google Drive**). You get a list: how many files are identical, and which files differ (and which side is newer), exist only on this device, or exist only on Drive. Nothing is changed. Without encryption the quick check is exact and downloads nothing. With encryption, press **Exact check** to download and compare the files that cannot be told otherwise. The same check is available as a command, so you can give it a hotkey.
+
 ## What is new in 3.13.3: the Drive check is on for new installs, every 3 minutes
 
 **Check Google Drive for waiting changes** (the number on the Pull icon) is now on from the start for a **new install**, and it asks every **3 minutes** instead of 15. Pick 1, 2, 3, 5, 10 or 15 minutes with the new **Check Google Drive every** setting. If you were already using the plugin, your choice is kept: it stays off unless you turned it on. Google cannot tell the plugin about a change by itself, so the plugin asks, quietly, and never during a sync.

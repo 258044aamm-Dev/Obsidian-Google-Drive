@@ -36,3 +36,10 @@ have at least one note open. Make a test vault copy if you are unsure.
 - [ ] Airplane mode, tap Push: a clear message, nothing lost; turn it off, Push again: works.
 
 Anything that does not match: write down the Obsidian version, the device, the theme, and send a screenshot.
+
+## Compare with Drive (3.14.0)
+- [ ] Tap the header icon: under Push and Pull there are two items, "Compare this note with Google Drive" and "Compare the whole vault with Google Drive" (greyed out during a sync).
+- [ ] Right after a Push, "Compare the whole vault" says IDENTICAL.
+- [ ] Edit a note on another device and push; on this device the compare lists it under "ONLY ON..." or "DIFFERENT" (before a Pull) and says which side is newer.
+- [ ] With encryption on: the files of equal size are "Not decided yet"; press Exact check and they become identical. Stop works.
+- [ ] Nothing changed afterwards: the number on the icon and the pending list are the same as before.

@@ -20,6 +20,8 @@ import {
 	TFile,
 } from 'obsidian';
 import { runSyncDoctor } from './helpers/doctor-command';
+import { runCompareActiveNote } from './helpers/compare-note-command';
+import { runCompareVault } from './helpers/compare-vault-command';
 import { installStatusBar, type StatusBar } from './helpers/status-bar';
 import { createKeyStore, loadEncryption, type E2ee, type KeyStore } from './helpers/e2ee';
 import { renderRow } from './helpers/settings-row';
@@ -218,6 +220,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 				onPull: () => {
 					if (!this.syncing) void pull(this);
 				},
+				onCompareNote: () => void runCompareActiveNote(this),
+				onCompareVault: () => void runCompareVault(this),
 			},
 		);
 		this.header.start();

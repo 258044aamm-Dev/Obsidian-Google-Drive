@@ -25,6 +25,10 @@ export interface FileMetadata {
 	properties: Record<string, string>;
 	modifiedTime: string;
 	trashed: boolean;
+	/** bytes, as text (not for Google Docs files); only when asked for */
+	size?: string;
+	/** MD5 of the stored bytes, hex; only when asked for */
+	md5Checksum?: string;
 }
 
 type StringSearch = string | { contains: string } | { not: string };

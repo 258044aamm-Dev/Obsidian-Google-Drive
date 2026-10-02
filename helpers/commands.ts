@@ -11,6 +11,7 @@ import { Modal, Notice, Setting } from 'obsidian';
 import type { SettingDefinition, SettingDefinitionGroup } from 'obsidian';
 import type ObsidianGoogleDrive from '../main';
 import { runCompareActiveNote } from './compare-note-command';
+import { runCompareVault } from './compare-vault-command';
 import { runSyncDoctor } from './doctor-command';
 import { foldButton, foldedCard } from './fold';
 import { fixDrivePath } from './fix_drive_path';
@@ -117,6 +118,15 @@ export const PLUGIN_COMMANDS: PluginCommand[] = [
 		risk: 'safe',
 		needsToken: true,
 		run: (t) => runCompareActiveNote(t),
+	},
+	{
+		id: 'compare-vault-with-drive',
+		name: 'Compare the whole vault with Google Drive (read-only)',
+		desc: 'Checks every synced file: which are identical to the Google Drive copy, which differ (and which side is newer), and which exist on only one side. It changes nothing. With encryption, an Exact check can download the files that cannot be told otherwise.',
+		group: 'Checks',
+		risk: 'safe',
+		needsToken: true,
+		run: (t) => runCompareVault(t),
 	},
 	{
 		id: 'export-diagnostics',

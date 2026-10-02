@@ -28,15 +28,45 @@ export class Notice {
 }
 /** Text of every element a Modal created in onOpen (lets tests read the sync doctor report). */
 export const modalTexts: string[] = [];
-export class Modal {
-	app: unknown;
-	contentEl = {
-		createEl: (_tag: string, o?: { text?: string }) => {
-			if (o?.text) modalTexts.push(o.text);
-			return { addEventListener: () => {} };
-		},
+/** Every element a Modal created (tests click the buttons and read the text). */
+export interface FakeEl {
+	tag: string;
+	text: string;
+	disabled?: boolean;
+	classes: Set<string>;
+	listeners: Record<string, (() => void)[]>;
+	createEl: (tag: string, o?: { text?: string; cls?: string }) => FakeEl;
+	createDiv: (o?: { text?: string; cls?: string }) => FakeEl;
+	addEventListener: (type: string, fn: () => void) => void;
+	click: () => void;
+	addClass: (c: string) => void;
+	removeClass: (c: string) => void;
+	setText: (t: string) => void;
+	empty: () => void;
+}
+export const modalEls: FakeEl[] = [];
+const fakeEl = (tag: string, o?: { text?: string; cls?: string }): FakeEl => {
+	const el: FakeEl = {
+		tag,
+		text: o?.text ?? '',
+		classes: new Set(o?.cls ? [o.cls] : []),
+		listeners: {},
+		createEl: (t, opts) => fakeEl(t, opts),
+		createDiv: (opts) => fakeEl('div', opts),
+		addEventListener: (type, fn) => ((el.listeners[type] ??= []).push(fn)),
+		click: () => (el.listeners.click ?? []).forEach((fn) => fn()),
+		addClass: (c) => void el.classes.add(c),
+		removeClass: (c) => void el.classes.delete(c),
+		setText: (t) => void (el.text = t),
 		empty: () => {},
 	};
+	modalEls.push(el);
+	if (o?.text) modalTexts.push(o.text);
+	return el;
+};
+export class Modal {
+	app: unknown;
+	contentEl = fakeEl('div');
 	constructor(app?: unknown) {
 		this.app = app;
 	}

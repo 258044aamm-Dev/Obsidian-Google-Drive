@@ -92,7 +92,13 @@ describe('the header icon on a phone', () => {
 		await edit(mobile, 'Inbox/a.md', 'from the phone');
 		view.icons[0]!.cb({});
 		const menu = lastMenu.current!;
-		expect(menu.items.map((i) => i.title?.split(' (')[0])).toEqual(['Push to Google Drive', 'Pull from Google Drive']);
+		expect(menu.items.map((i) => i.title?.split(' (')[0])).toEqual([
+			'Push to Google Drive',
+			'Pull from Google Drive',
+			undefined, // the separator before the read-only checks (3.14.0)
+			'Compare this note with Google Drive',
+			'Compare the whole vault with Google Drive',
+		]);
 		expect(menu.items[0]!.title).toContain('1 waiting on this device');
 		menu.items[0]!.click!();
 		expect(spy).toMatchObject({ push: 1, pull: 0 });
@@ -103,6 +109,20 @@ describe('the header icon on a phone', () => {
 		menu.items[1]!.click!();
 		expect(spy).toMatchObject({ push: 1, pull: 1 });
 		mobile.plugin.syncing = false;
+	});
+
+	it('the compare item in the menu opens the whole-vault report of the real plugin (3.14.0)', async () => {
+		const { mobile, view } = await phone();
+		const { modalEls } = await import('./obsidian-mock');
+		modalEls.length = 0;
+		await edit(mobile, 'Inbox/a.md', 'from the phone, longer');
+		view.icons[0]!.cb({});
+		const item = lastMenu.current!.items.find((i) => i.title === 'Compare the whole vault with Google Drive')!;
+		item.click!();
+		for (let i = 0; i < 100 && !modalEls.some((e) => e.tag === 'pre'); i++) await sleep(10);
+		const report = modalEls.filter((e) => e.tag === 'pre').at(-1)!;
+		expect(report.text).toContain('Different: 1');
+		expect(report.text).toContain('Inbox/a.md');
 	});
 
 	it('is added on a desktop too, with the same number', async () => {

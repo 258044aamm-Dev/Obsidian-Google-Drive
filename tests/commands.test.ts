@@ -28,6 +28,7 @@ const actions = vi.hoisted(() => ({
 	fixDrivePath: vi.fn(),
 	runSyncDoctor: vi.fn(),
 	runCompareActiveNote: vi.fn(),
+	runCompareVault: vi.fn(),
 	createRestorePointNow: vi.fn(),
 	startVaultRestore: vi.fn(),
 	runRepairSyncMemory: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('../helpers/repair', () => ({ runRepairSyncMemory: actions.runRepairSync
 vi.mock('../helpers/fix_drive_path', () => ({ fixDrivePath: actions.fixDrivePath }));
 vi.mock('../helpers/doctor-command', () => ({ runSyncDoctor: actions.runSyncDoctor }));
 vi.mock('../helpers/compare-note-command', () => ({ runCompareActiveNote: actions.runCompareActiveNote }));
+vi.mock('../helpers/compare-vault-command', () => ({ runCompareVault: actions.runCompareVault }));
 vi.mock('../helpers/history-ui', () => ({
 	createRestorePointNow: actions.createRestorePointNow,
 	startVaultRestore: actions.startVaultRestore,
@@ -72,7 +74,8 @@ const BEFORE_3_8_2: [string, string][] = [
 	['export-diagnostics', 'Copy sync diagnostics to clipboard'],
 ];
 const ADDED_3_8_3: [string, string][] = [['repair-sync-memory', 'Repair sync memory (keeps your notes)']];
-const ALL: [string, string][] = [...BEFORE_3_8_2, ...ADDED_3_8_3];
+const ADDED_3_14_0: [string, string][] = [['compare-vault-with-drive', 'Compare the whole vault with Google Drive (read-only)']];
+const ALL: [string, string][] = [...BEFORE_3_8_2, ...ADDED_3_8_3, ...ADDED_3_14_0];
 
 class El {
 	children: El[] = [];
@@ -162,6 +165,7 @@ describe('the command list', () => {
 		expect(risk['fix-drive-path']).toBe('destructive');
 		expect(risk['sync-doctor']).toBe('safe');
 		expect(risk['compare-note-with-drive']).toBe('safe');
+		expect(risk['compare-vault-with-drive']).toBe('safe');
 		expect(risk['export-diagnostics']).toBe('safe');
 		expect(risk['push']).toBe('changes');
 		expect(risk['repair-sync-memory']).toBe('changes');

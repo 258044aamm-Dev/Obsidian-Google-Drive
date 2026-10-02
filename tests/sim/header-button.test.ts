@@ -56,7 +56,7 @@ const makeView = () => {
 	return view;
 };
 
-const setup = (opts: { views?: any[]; settings?: Record<string, unknown> } = {}) => {
+const setup = (opts: { views?: any[]; settings?: Record<string, unknown>; compare?: boolean } = {}) => {
 	const handlers: Record<string, () => void> = {};
 	const views = opts.views ?? [makeView()];
 	const t: any = {
@@ -71,8 +71,12 @@ const setup = (opts: { views?: any[]; settings?: Record<string, unknown> } = {})
 			},
 		},
 	};
-	const calls = { push: 0, pull: 0 };
-	const header = new HeaderButton(t, { onPush: () => calls.push++, onPull: () => calls.pull++ });
+	const calls = { push: 0, pull: 0, note: 0, vault: 0 };
+	const header = new HeaderButton(t, {
+		onPush: () => calls.push++,
+		onPull: () => calls.pull++,
+		...(opts.compare && { onCompareNote: () => calls.note++, onCompareVault: () => calls.vault++ }),
+	});
 	return { t, header, views, handlers, calls };
 };
 const ops = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`f${i}.md`, {}]));
@@ -187,9 +191,9 @@ describe('the menu', () => {
 		const s = setup();
 		const menu = open(s);
 		menu.items[0]!.click!();
-		expect(s.calls).toEqual({ push: 1, pull: 0 });
+		expect(s.calls).toMatchObject({ push: 1, pull: 0 });
 		menu.items[1]!.click!();
-		expect(s.calls).toEqual({ push: 1, pull: 1 });
+		expect(s.calls).toMatchObject({ push: 1, pull: 1 });
 	});
 
 	it('shows the counts in the rows when they are known', () => {
@@ -302,5 +306,47 @@ describe('switching the setting on and off in the settings page', () => {
 		s.t.settings.headerButton = true;
 		s.header.update();
 		expect(shown(s.views[0].added[0].el)).toBe('2');
+	});
+});
+
+describe('the compare items in the menu (3.14.0)', () => {
+	const open = (s: ReturnType<typeof setup>) => {
+		s.header.start();
+		s.views[0].added[0].cb({});
+		return lastMenu.current!;
+	};
+
+	it('are offered under Push and Pull, after a separator', () => {
+		const menu = open(setup({ compare: true }));
+		expect(menu.items.map((i) => i.separator ? '---' : i.title)).toEqual([
+			'Push to Google Drive',
+			'Pull from Google Drive',
+			'---',
+			'Compare this note with Google Drive',
+			'Compare the whole vault with Google Drive',
+		]);
+		expect(menu.items.every((i) => !i.disabled)).toBe(true);
+	});
+
+	it('each runs only its own check', () => {
+		const s = setup({ compare: true });
+		const menu = open(s);
+		const [note, vault] = menu.items.filter((i) => i.click && /Compare/.test(i.title ?? ''));
+		note!.click!();
+		expect(s.calls).toEqual({ push: 0, pull: 0, note: 1, vault: 0 });
+		vault!.click!();
+		expect(s.calls).toEqual({ push: 0, pull: 0, note: 1, vault: 1 });
+	});
+
+	it('are greyed out while a sync runs, like Push and Pull', () => {
+		const s = setup({ compare: true });
+		s.t.syncing = true;
+		const menu = open(s);
+		expect(menu.items.filter((i) => !i.separator).map((i) => i.disabled)).toEqual([true, true, true, true]);
+	});
+
+	it('are left out when the plugin gives no handlers (the menu stays Push and Pull)', () => {
+		const menu = open(setup());
+		expect(menu.items.map((i) => i.title)).toEqual(['Push to Google Drive', 'Pull from Google Drive']);
 	});
 });

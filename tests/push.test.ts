@@ -191,6 +191,7 @@ describe('push', () => {
 			'changed-id',
 			expect.any(Blob),
 			expect.any(Object),
+			expect.any(String), // the vault path (needed to encrypt the file when end-to-end encryption is on)
 		);
 		expect(plugin.settings.operations).toEqual({});
 		expect(plugin.endSync).toHaveBeenCalledWith(syncNotice, false);

@@ -7,6 +7,8 @@ export default defineConfig(
 		'node_modules',
 		'dist',
 		'esbuild.config.mjs',
+		// stand-alone browser harness (stand-ins for Obsidian's page helpers; see tests/browser/README.md)
+		'tests/browser',
 		'version-bump.mjs',
 		'versions.json',
 		'main.js',
@@ -33,6 +35,27 @@ export default defineConfig(
 		files: ['tests/**/*.ts'],
 		rules: {
 			'@typescript-eslint/unbound-method': 'off',
+			'obsidianmd/no-global-this': 'off',
+		},
+	},
+	{
+		// Test harness / investigation code: a fake Obsidian + Google Drive that is intentionally loosely typed.
+		files: ['tests/sim/**/*.ts', 'investigation/**/*.ts'],
+		languageOptions: { globals: { ...globals.node } },
+		rules: {
+			'@typescript-eslint/unbound-method': 'off',
+			'@typescript-eslint/no-unsafe-member-access': 'off',
+			'@typescript-eslint/no-unsafe-assignment': 'off',
+			'@typescript-eslint/no-unsafe-argument': 'off',
+			'@typescript-eslint/no-unsafe-call': 'off',
+			'@typescript-eslint/no-unsafe-return': 'off',
+			'@typescript-eslint/no-explicit-any': 'off',
+			'obsidianmd/no-tfile-tfolder-cast': 'off',
+			'obsidianmd/hardcoded-config-path': 'off',
+			'obsidianmd/no-nodejs-modules': 'off',
+			'obsidianmd/prefer-window-timers': 'off',
+			'obsidianmd/rule-custom-message': 'off',
+			'no-unsanitized/method': 'off',
 			'obsidianmd/no-global-this': 'off',
 		},
 	},

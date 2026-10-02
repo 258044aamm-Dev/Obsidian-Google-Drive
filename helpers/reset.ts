@@ -101,7 +101,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 						files.map((file) => async () => {
 							const [onlineFile, metadata] = await Promise.all([
 								t.drive
-									.getFile(filePathToId[file.path] as string)
+									.getFile(filePathToId[file.path] as string, file.path)
 									.arrayBuffer(),
 								t.drive.getFileMetadata(
 									filePathToId[file.path] as string,
@@ -182,7 +182,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 				batchAsync(
 					deletedFiles.map(([path]) => async () => {
 						const onlineFile = await t.drive
-							.getFile(filePathToId[path] as string)
+							.getFile(filePathToId[path] as string, path)
 							.arrayBuffer();
 					if (!onlineFile) {
 						return new Notice(

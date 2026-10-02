@@ -9,16 +9,26 @@ import {
 	unSplitPath,
 } from './drive';
 import { pull } from './pull';
+import { blockedMessage, type PullGuard } from './push-guard';
+import { isOwnPluginPath } from './own-plugin';
 import type { SyncPhase } from './diagnostics';
 import { sanitizeMessage } from './diagnostics';
+import { massDeleteWarning } from './push-warning';
+import { recordRestorePointAfterPush } from './history';
+import { recordMissedEdits } from './missed-edits';
+import { hashOf, recordSynced, recordSyncedFromDisk, stampOf } from './sync-state';
+import { dropIgnoredMarks, isSyncedPath } from './ignore';
+import { connectionHint } from './net-retry';
+import { verifySummary, verifyUploads } from './push-verify';
+import type { UploadedItem } from './push-verify';
 
 export class ConfirmPushModal extends Modal {
-	proceed: (res: boolean) => void;
+	proceed: (res: boolean, withoutPull?: boolean) => void;
 
 	constructor(
 		t: ObsidianGoogleDrive,
 		initialOperations: [string, 'create' | 'delete' | 'modify'][],
-		proceed: (res: boolean) => void,
+		proceed: (res: boolean, withoutPull?: boolean) => void,
 	) {
 		super(t.app);
 		this.proceed = proceed;
@@ -29,6 +39,29 @@ export class ConfirmPushModal extends Modal {
 			.setText(
 				'Do you want to push the following changes to Google Drive:',
 			);
+		if (!initialOperations.length) {
+			this.contentEl
+				.createEl('p')
+				.setText(
+					'No changes were detected on this device since the last sync.',
+				);
+		}
+		this.contentEl
+			.createEl('p')
+			.setText(
+				'Push does not pull. If Google Drive has newer changes, push stops and asks you to pull first. The button below uploads your changes anyway, unless something changed both on this device and in Google Drive.',
+			);
+		const warning = massDeleteWarning(
+			initialOperations,
+			Object.keys(t.settings.driveIdToPath).length,
+			t.settings.deleteToTrash === true,
+		);
+		if (warning) {
+			this.contentEl.createEl('p', {
+				text: warning,
+				cls: 'mod-warning',
+			});
+		}
 		const container = this.contentEl.createDiv();
 
 		const render = (operations: typeof initialOperations) => {
@@ -96,6 +129,12 @@ export class ConfirmPushModal extends Modal {
 						proceed(true);
 						this.close();
 					}),
+			)
+			.addButton((btn) =>
+				btn.setButtonText('Push without pulling').onClick(() => {
+					proceed(true, true);
+					this.close();
+				}),
 			);
 	}
 
@@ -212,7 +251,7 @@ export class ConfirmUndoModal extends Modal {
 		await batchAsync(
 			deletedFiles.map((path) => async () => {
 				const onlineFile = await this.t.drive
-					.getFile(this.filePathToId[path] as string)
+					.getFile(this.filePathToId[path] as string, path)
 					.arrayBuffer();
 				if (!onlineFile) {
 					new Notice(
@@ -242,7 +281,7 @@ export class ConfirmUndoModal extends Modal {
 
 		const [onlineFile, metadata] = await Promise.all([
 			this.t.drive
-				.getFile(this.filePathToId[path] as string)
+				.getFile(this.filePathToId[path] as string, path)
 				.arrayBuffer(),
 			this.t.drive.getFileMetadata(this.filePathToId[path] as string),
 		]);
@@ -259,8 +298,12 @@ export class ConfirmUndoModal extends Modal {
 export const push = async (
 	t: ObsidianGoogleDrive,
 	skipConfirmation = false,
+	withoutPullOption = false,
 ) => {
 	if (t.syncing) return;
+	// Safety net: an edited note whose event was missed would otherwise be skipped.
+	await recordMissedEdits(t);
+	dropIgnoredMarks(t);
 	const initialOperations = Object.entries(t.settings.operations).sort(
 		([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
 	); // Alphabetical
@@ -268,10 +311,15 @@ export const push = async (
 	const { vault } = t.app;
 	const adapter = vault.adapter;
 
+	let withoutPull = withoutPullOption;
 	const proceed =
 		skipConfirmation ||
 		(await new Promise<boolean>((resolve) => {
-			new ConfirmPushModal(t, initialOperations, resolve).open();
+			new ConfirmPushModal(t, initialOperations, (ok, skipPull) => {
+				// closing the window reports `false` after a button was pressed: ignore that
+				if (ok) withoutPull = skipPull === true;
+				resolve(ok);
+			}).open();
 		}));
 
 	if (!proceed) return;
@@ -279,9 +327,36 @@ export const push = async (
 	const syncNotice = await t.startSync('Pushing to Google Drive');
 
 	let lastPhase: SyncPhase = 'upload';
+	/** Progress (pending list, id map, own uploads) is saved as the Push goes, so a stop or a restart keeps it. */
+	const persist = () => {
+		try {
+			t.debouncedSaveSettings();
+		} catch {
+			// best effort; the final save still happens
+		}
+	};
+	/** Set once every upload is done and the pending list is empty. */
+	let allUploaded = false;
+	/** Files this Push uploaded; a sample is checked on Drive at the end. */
+	const uploaded: UploadedItem[] = [];
+
+	// Whether Drive holds changes that this device has NOT pulled (only possible when the
+	// user chose "Push without pulling"). The sync position then must not move forward.
+	let unpulledRemoteChanges = false;
 
 	try {
-		if (!(await pull(t, true))) {
+		// Push never pulls: it only looks at Drive and stops if there is something to pull.
+		const guard: PullGuard = { mode: withoutPull ? 'overlap' : 'any' };
+		if (!(await pull(t, true, guard))) {
+			if (guard.blocked) {
+				t.diagnostics.record({
+					phase: 'upload',
+					operation: 'pre-push-check',
+					message: `Push stopped: ${guard.remoteCount} remote change(s), ${guard.conflicts?.length ?? 0} collision(s), mode ${guard.mode}`,
+				});
+				new Notice(blockedMessage(guard, withoutPull), 12000);
+				return;
+			}
 			t.diagnostics.record({
 				phase: 'upload',
 				operation: 'pre-push-pull',
@@ -293,6 +368,7 @@ export const push = async (
 			);
 			return;
 		}
+		unpulledRemoteChanges = (guard.remoteCount ?? 0) > 0;
 
 		lastPhase = 'root-folder';
 		if (!(await t.diagnostics.withContext('root-folder', 'verify-root-folder', () =>
@@ -340,11 +416,34 @@ export const push = async (
 		await Promise.all(
 			configOnDrive.map(async ({ properties }) => {
 				const path = unSplitPath(properties);
+				// Config files of this plugin itself are not managed by sync.
+				if (isOwnPluginPath(t, path)) return;
+				// A kind of settings file that is switched off is left alone on Drive.
+				if (!isSyncedPath(t, path)) return;
 				if (!(await adapter.exists(path))) {
-					deletes.push([path, 'delete']);
+					// Missing here is only a deletion if this device HAD the file (it pulled or
+					// pushed it before). A device that never had it (a phone that has not pulled
+					// yet, a vault joined later) must not remove it from Drive.
+					if (t.settings.syncedFiles?.[path]) {
+						deletes.push([path, 'delete']);
+					}
 				}
 			}),
 		);
+
+		// A delete whose Drive file is not known (for example one that an interrupted Push already
+		// deleted) has nothing left to do. Dropping it is the safe direction: Drive is not touched.
+		for (let i = deletes.length - 1; i >= 0; i--) {
+			const [path] = deletes[i] as [string, string];
+			if (pathsToIds[path]) continue;
+			delete t.settings.operations[path];
+			deletes.splice(i, 1);
+			t.diagnostics.record({
+				phase: 'batch-delete',
+				operation: 'delete-skipped',
+				message: 'A pending delete was dropped: its file is no longer known on Drive',
+			});
+		}
 
 		if (deletes.length) {
 			const idsToDelete = deletes.map(([path]) => {
@@ -376,6 +475,9 @@ export const push = async (
 				return;
 			}
 			uniqueIds.forEach((id) => delete t.settings.driveIdToPath[id]);
+			// Done on Drive: forget the operations at the same moment as the ids.
+			deletes.forEach(([path]) => delete t.settings.operations[path]);
+			persist();
 
 			syncNotice.setMessage(
 				`Pushing... ${uniqueIds.length} file${uniqueIds.length === 1 ? '' : 's'} deleted`,
@@ -421,6 +523,8 @@ export const push = async (
 
 								t.settings.driveIdToPath[id] = folder.path;
 								pathsToIds[folder.path] = id;
+								delete t.settings.operations[folder.path];
+								persist();
 							}),
 						);
 					}
@@ -430,8 +534,11 @@ export const push = async (
 
 				await batchAsync(
 					notes.map((note) => async () => {
+						// Stamp taken before the read: an edit made during the upload still differs from it.
+						const stamp = stampOf(note);
+						const data = await vault.readBinary(note);
 						const id = await t.drive.uploadFile(
-							new Blob([await vault.readBinary(note)]),
+							new Blob([data]),
 							note.name,
 							note.parent ? pathsToIds[note.parent.path] : undefined,
 							{
@@ -453,6 +560,10 @@ export const push = async (
 					);
 
 					t.settings.driveIdToPath[id] = note.path;
+					recordSynced(t, note.path, stamp, await hashOf(data));
+					uploaded.push({ id, path: note.path, size: data.byteLength });
+					delete t.settings.operations[note.path];
+					persist();
 				}),
 			);
 		});
@@ -476,10 +587,13 @@ export const push = async (
 
 				await batchAsync(
 					files.map((file) => async () => {
+						const stamp = stampOf(file);
+						const data = await vault.readBinary(file);
 						const id = await t.drive.updateFile(
 							pathToId[file.path] as string,
-							new Blob([await vault.readBinary(file)]),
+							new Blob([data]),
 							{ modifiedTime: new Date().toISOString() },
+							file.path,
 						);
 					if (!id) {
 						new Notice(
@@ -493,6 +607,10 @@ export const push = async (
 					syncNotice.setMessage(
 						`Pushing... updating ${completed}/${files.length} files`,
 					);
+					recordSynced(t, file.path, stamp, await hashOf(data));
+					uploaded.push({ id, path: file.path, size: data.byteLength });
+					delete t.settings.operations[file.path];
+					persist();
 					}),
 				);
 			});
@@ -503,7 +621,9 @@ export const push = async (
 			'get-config-files',
 			async () => {
 				lastPhase = 'config-sync';
-				return t.drive.getConfigFilesToSync();
+				return t.drive.getConfigFilesToSync(
+					new Set(configOnDrive.map(({ properties }) => unSplitPath(properties))),
+				);
 			},
 		);
 
@@ -553,17 +673,20 @@ export const push = async (
 
 		await batchAsync(
 			configFilesToSync.map((path) => async () => {
+				const configData = await adapter.readBinary(path);
 				if (pathsToIds[path]) {
 					await t.drive.updateFile(
 						pathsToIds[path],
-						new Blob([await adapter.readBinary(path)]),
+						new Blob([configData]),
 						{ modifiedTime: new Date().toISOString() },
+						path,
 					);
+					await recordSyncedFromDisk(t, path, configData);
 					return;
 				}
 
 				const id = await t.drive.uploadFile(
-					new Blob([await adapter.readBinary(path)]),
+					new Blob([configData]),
 					fileNameFromPath(path),
 					pathsToIds[path.split('/').slice(0, -1).join('/')],
 					{
@@ -581,25 +704,49 @@ export const push = async (
 
 				t.settings.driveIdToPath[id] = path;
 				pathsToIds[path] = id;
+				await recordSyncedFromDisk(t, path, configData);
 			}),
 		);
 
-		await t.drive.updateFile(
-			pathsToIds[
-				vault.configDir + '/plugins/google-drive-sync/data.json'
-			] as string,
-			new Blob([JSON.stringify(t.settings, null, 2)]),
-			{ modifiedTime: new Date().toISOString() },
-		);
-
 		t.settings.operations = {};
+		allUploaded = true;
 
-		if (!(await t.endSync(syncNotice, false))) return;
+		// Version history: one restore point per Push. Never fails the Push (see history.ts).
+		if (t.settings.historyEnabled === true) {
+			syncNotice.setMessage('Pushing... saving restore point');
+			await recordRestorePointAfterPush(t);
+		}
+
+		let verified = '';
+		if (uploaded.length) {
+			syncNotice.setMessage('Pushing... checking the uploaded files on Drive');
+			verified = verifySummary(
+				await verifyUploads(t, uploaded),
+				t.settings.e2eeEnabled === true,
+			);
+		}
+
+		const ended = unpulledRemoteChanges
+			? await t.endSync(syncNotice, false, false)
+			: await t.endSync(syncNotice, false);
+		if (!ended) return;
 
 		await t.saveLog(t.diagnostics.getEntries());
 		const totalFiles = creates.length + modifies.length;
+		if (!totalFiles && !deletes.length) {
+			new Notice(
+				'Nothing to push: no changes were detected on this device since the last sync. If you edited a note, run the doctor command.',
+				8000,
+			);
+			return;
+		}
 		new Notice(
-			`Push complete — ${totalFiles} file${totalFiles === 1 ? '' : 's'} synced.`,
+			`Push complete — ${totalFiles} file${totalFiles === 1 ? '' : 's'} synced.` +
+				(unpulledRemoteChanges
+					? ' Google Drive has newer changes that were not pulled: press Pull next.'
+					: '') +
+				verified,
+			verified ? 12000 : undefined,
 		);
 	} catch (error) {
 		t.diagnostics.record({
@@ -608,10 +755,22 @@ export const push = async (
 			message: sanitizeMessage(error),
 			stack: error instanceof Error ? error.stack : undefined,
 		});
+		const pending = Object.keys(t.settings.operations).length;
+		const lost = connectionHint(error);
 		new Notice(
-			`Push failed during ${lastPhase}. Use "Copy diagnostics" for details.`,
-			8000,
+			(allUploaded
+				? `Push failed during ${lastPhase}, after everything was uploaded (the connection may have dropped). Press Push again: nothing will be uploaded twice. Use "Copy diagnostics" for details.`
+				: uploaded.length || pending
+					? `Push failed during ${lastPhase}. ${uploaded.length} file${uploaded.length === 1 ? ' was' : 's were'} uploaded before it stopped and ${pending} change${pending === 1 ? ' is' : 's are'} still pending. Press Push again once the problem is fixed. Use "Copy diagnostics" for details.`
+					: `Push failed during ${lastPhase}. Use "Copy diagnostics" for details.`) +
+				(lost ? ` ${lost} Press Push again when the connection is back.` : ''),
+			12000,
 		);
+		try {
+			await t.saveSettings();
+		} catch {
+			// best effort
+		}
 		console.error('Google Drive push failed', error);
 	} finally {
 		if (t.syncing) t.abortSync(syncNotice);

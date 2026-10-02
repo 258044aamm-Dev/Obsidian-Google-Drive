@@ -1,6 +1,20 @@
 import type ObsidianGoogleDrive from '../main';
 import { getDriveAgent } from './requests';
-import { requestUrl, TAbstractFile, TFolder } from 'obsidian';
+import { E2eeError, requireUnlocked } from './e2ee';
+import { isOwnPluginPath } from './own-plugin';
+import { recordOwnUpload } from './sync-state';
+import { isCategoryEnabled, THEME_FILES } from './config-scope';
+import {
+	DriveHttpError,
+	isNetworkError,
+	isRetryableError,
+	net,
+	noteRetry,
+	retryDelay,
+	sleep,
+	withTimeout,
+} from './net-retry';
+import { Notice, requestUrl, TAbstractFile, TFolder } from 'obsidian';
 
 export interface FileMetadata {
 	id: string;
@@ -11,6 +25,10 @@ export interface FileMetadata {
 	properties: Record<string, string>;
 	modifiedTime: string;
 	trashed: boolean;
+	/** bytes, as text (not for Google Docs files); only when asked for */
+	size?: string;
+	/** MD5 of the stored bytes, hex; only when asked for */
+	md5Checksum?: string;
 }
 
 type StringSearch = string | { contains: string } | { not: string };
@@ -118,8 +136,28 @@ export const unSplitPath = (properties: Record<string, string>) => {
 export const getDriveClient = (t: ObsidianGoogleDrive) => {
 	const drive = getDriveAgent(t);
 
-	const getQuery = (matches: QueryMatch[]) =>
-		encodeURIComponent(
+	/** The encryption helper while end-to-end encryption is on (throws if it is on but locked); undefined when it is off. */
+	const e2 = () => requireUnlocked(t);
+	/** Value of the `vault` property that marks this vault's items on Drive. */
+	const vaultValue = () => e2()?.vaultTag ?? t.app.vault.getName();
+
+	const getQuery = async (plainMatches: QueryMatch[]) => {
+		const e = e2();
+		const matches = e
+			? await Promise.all(
+					plainMatches.map(async (match) =>
+						match.properties
+							? {
+									...match,
+									properties: await e.encodeQueryProperties(
+										match.properties,
+									),
+								}
+							: match,
+					),
+				)
+			: plainMatches;
+		return encodeURIComponent(
 			`(${matches
 				.map((match) => {
 					const entries = Object.entries(match).flatMap(
@@ -140,8 +178,9 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 				})
 				.join(
 					' or ',
-				)}) and trashed=false and properties has { key='vault' and value='${escapeQueryValue(t.app.vault.getName())}' }`,
+				)}) and trashed=false and properties has { key='vault' and value='${escapeQueryValue(vaultValue())}' }`,
 		);
+	};
 
 	const paginateFiles = async ({
 		matches,
@@ -163,19 +202,18 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		pageSize?: number;
 		include?: (keyof FileMetadata)[];
 	}) => {
+		const query = matches
+			? await getQuery(matches)
+			: encodeURIComponent(
+					"trashed=false and properties has { key='vault' and value='" +
+						escapeQueryValue(vaultValue()) +
+						"'}",
+				);
 		const files = await drive
 			.get(
 				`drive/v3/files?fields=nextPageToken,files(${include.join(
 					',',
-				)})&pageSize=${pageSize}&q=${
-					matches
-						? getQuery(matches)
-						: encodeURIComponent(
-								"trashed=false and properties has { key='vault' and value='" +
-									escapeQueryValue(t.app.vault.getName()) +
-									"'}",
-							)
-				}${
+				)})&pageSize=${pageSize}&q=${query}${
 					matches?.find(({ query }) => query)
 						? ''
 						: '&orderBy=name' +
@@ -184,10 +222,41 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 			)
 			.json();
 		if (!files) return;
-		return files as {
+		const listing = files as {
 			nextPageToken?: string;
 			files: FileMetadata[];
 		};
+		const e = e2();
+		if (e && listing.files) {
+			try {
+				listing.files = await Promise.all(
+					listing.files.map(async (file: FileMetadata) =>
+						file.properties
+							? {
+									...file,
+									properties: await e.decodeProperties(
+										file.properties,
+									),
+								}
+							: file,
+					),
+				);
+			} catch (error) {
+				// A listing with a damaged entry is refused as a whole: treating the entry as
+				// "missing" could make Pull delete a real file on this device.
+				t.diagnostics.record({
+					phase: 'list-files',
+					operation: 'decode-listing',
+					message: error instanceof Error ? error.message : 'Could not read the encrypted listing.',
+				});
+				new Notice(
+					'Google Drive Sync: an encrypted item on Drive could not be verified, so nothing was synced. See the diagnostics.',
+					8000,
+				);
+				return;
+			}
+		}
+		return listing;
 	};
 
 	const searchFiles = async (
@@ -219,6 +288,62 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		);
 	};
 
+	/**
+	 * Makes a file or folder, and survives a failure that comes from the connection or from Google.
+	 * A create is not simply repeated (the first one may have got through and only its answer was
+	 * lost, which would make a duplicate): after the wait, Drive is asked whether the item exists
+	 * already. If it does, that one is used; only if it does not is the create repeated. If Drive
+	 * cannot be asked, the original failure is reported and nothing is repeated.
+	 */
+	const retryCreate = async <R extends { id: string; modifiedTime?: string }>(
+		what: string,
+		attempt: () => Promise<R>,
+		lookup: { path: string; parent: string } | undefined,
+		adopt?: (found: { id: string; modifiedTime?: string }) => Promise<R>,
+	): Promise<R> => {
+		for (let tries = 0; ; tries++) {
+			try {
+				return await attempt();
+			} catch (error) {
+				const wait =
+					lookup && isRetryableError(error)
+						? retryDelay(
+								t,
+								tries,
+								error instanceof DriveHttpError ? error.retryAfter : undefined,
+							)
+						: undefined;
+				if (wait === undefined || !lookup) throw error;
+				noteRetry(t, what, tries, wait, error);
+				await sleep(wait);
+				const look = async () => {
+					const files = await searchFiles({
+						matches: [{ properties: splitPath(lookup.path), parent: lookup.parent }],
+						include: ['id', 'modifiedTime'],
+					});
+					if (!files) throw error;
+					return files[0];
+				};
+				let found: { id: string; modifiedTime?: string } | undefined;
+				try {
+					found = await look();
+					// Drive's search can lag a moment behind a create: after a lost answer look twice.
+					if (!found && isNetworkError(error)) {
+						await sleep(net.settleMs);
+						found = await look();
+					}
+				} catch {
+					throw error; // cannot tell whether it exists: do not risk a duplicate
+				}
+				if (found) {
+					return adopt
+						? adopt(found)
+						: ({ id: found.id, modifiedTime: found.modifiedTime } as R);
+				}
+			}
+		}
+	};
+
 	const persistRootFolderId = async (id: string) => {
 		if (t.settings.rootFolderId === id) return;
 		t.settings.rootFolderId = id;
@@ -238,6 +363,10 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		);
 		if (!files) return;
 		if (!files.length) {
+			if (t.settings.e2eeEnabled === true) {
+				// an encrypted vault is only created by "Turn on encryption", never implicitly
+				return;
+			}
 			const rootFolder = await drive
 				.post(`drive/v3/files`, {
 					json: {
@@ -280,21 +409,34 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}
 
 		if (!properties) properties = {};
-		if (!properties.vault) properties.vault = t.app.vault.getName();
+		if (!properties.vault) properties.vault = vaultValue();
+		const lookupPath = unSplitPath(properties);
+		const e = e2();
+		if (e) {
+			properties = await e.encodeProperties(properties);
+			if (properties.path) name = properties.path;
+		}
 
-		const folder = await drive
-			.post(`drive/v3/files`, {
-				json: {
-					name,
-					mimeType: folderMimeType,
-					description,
-					parents: [parent],
-					properties,
-					modifiedTime,
-				},
-			})
-			.json<{ id: string }>();
+		const folderProperties = properties;
+		const folder = await retryCreate(
+			'create folder',
+			() =>
+				drive
+					.post(`drive/v3/files?fields=id,modifiedTime`, {
+						json: {
+							name,
+							mimeType: folderMimeType,
+							description,
+							parents: [parent],
+							properties: folderProperties,
+							modifiedTime,
+						},
+					})
+					.json<{ id: string; modifiedTime?: string }>(),
+			lookupPath ? { path: lookupPath, parent } : undefined,
+		);
 		if (!folder) return;
+		recordOwnUpload(t, folder.id, folder.modifiedTime);
 		return folder.id;
 	};
 
@@ -312,7 +454,25 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		if (!metadata) metadata = {};
 		if (!metadata.properties) metadata.properties = {};
 		if (!metadata.properties.vault) {
-			metadata.properties.vault = t.app.vault.getName();
+			metadata.properties.vault = vaultValue();
+		}
+		const lookupPath = unSplitPath(metadata.properties);
+		const e = e2();
+		if (e) {
+			const plainProperties = metadata.properties;
+			const path = unSplitPath(plainProperties);
+			if (!path) {
+				throw new E2eeError('Cannot encrypt a file without a path.', 'bad-properties');
+			}
+			file = new Blob(
+				[(await e.encryptFile(await file.arrayBuffer(), path)) as BlobPart],
+				{ type: 'application/octet-stream' },
+			);
+			metadata = {
+				...metadata,
+				properties: await e.encodeProperties(plainProperties),
+			};
+			if (metadata.properties?.path) name = metadata.properties.path;
 		}
 
 		const form = new FormData();
@@ -332,12 +492,35 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		);
 		form.append('file', file);
 
-		const result = await drive
-			.post(`upload/drive/v3/files?uploadType=multipart&fields=id`, {
-				body: form,
-			})
-			.json<{ id: string }>();
+		const uploadParent = parent;
+		const result = await retryCreate(
+			'upload file',
+			() =>
+				drive
+					.post(`upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime`, {
+						body: form,
+					})
+					.json<{ id: string; modifiedTime?: string }>(),
+			lookupPath ? { path: lookupPath, parent: uploadParent } : undefined,
+			// the file that a lost create made: put this content into it (it may be an older copy)
+			async (found) => {
+				const again = new FormData();
+				again.append(
+					'metadata',
+					new Blob([JSON.stringify(metadata?.modifiedTime ? { modifiedTime: metadata.modifiedTime } : {})], {
+						type: 'application/json',
+					}),
+				);
+				again.append('file', file);
+				return drive
+					.patch(`upload/drive/v3/files/${found.id}?uploadType=multipart&fields=id,modifiedTime`, {
+						body: again,
+					})
+					.json<{ id: string; modifiedTime?: string }>();
+			},
+		);
 		if (!result) return;
+		recordOwnUpload(t, result.id, result.modifiedTime);
 
 		return result.id;
 	};
@@ -346,7 +529,19 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		id: string,
 		newContent: Blob,
 		newMetadata: Partial<Omit<FileMetadata, 'id'>> = {},
+		/** vault path of the file; needed while encryption is on (the content is bound to its path) */
+		path?: string,
 	) => {
+		const e = e2();
+		if (e) {
+			if (path === undefined) {
+				throw new E2eeError('Cannot encrypt an update without the file path.', 'bad-properties');
+			}
+			newContent = new Blob(
+				[(await e.encryptFile(await newContent.arrayBuffer(), path)) as BlobPart],
+				{ type: 'application/octet-stream' },
+			);
+		}
 		const form = new FormData();
 		form.append(
 			'metadata',
@@ -358,13 +553,14 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 		const result = await drive
 			.patch(
-				`upload/drive/v3/files/${id}?uploadType=multipart&fields=id`,
+				`upload/drive/v3/files/${id}?uploadType=multipart&fields=id,modifiedTime`,
 				{
 					body: form,
 				},
 			)
-			.json<{ id: string }>();
+			.json<{ id: string; modifiedTime?: string }>();
 		if (!result) return;
+		recordOwnUpload(t, result.id, result.modifiedTime);
 
 		return result.id;
 	};
@@ -388,11 +584,46 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		return true;
 	};
 
-	const getFile = (id: string) =>
-		drive.get(`drive/v3/files/${id}?alt=media&acknowledgeAbuse=true`);
+	/** `path` is the vault path of the file; needed while encryption is on (the content is checked against it). */
+	const getFile = (id: string, path?: string) => {
+		const response = drive.get(
+			`drive/v3/files/${id}?alt=media&acknowledgeAbuse=true`,
+		);
+		const e = e2();
+		if (!e) return response;
+		return {
+			arrayBuffer: async () => {
+				if (path === undefined) {
+					throw new E2eeError('Cannot check a download without the file path.', 'bad-properties');
+				}
+				const downloaded = await response.arrayBuffer();
+				if (!downloaded) return downloaded; // the download itself failed: same result as without encryption
+				return e.decryptFile(downloaded, path);
+			},
+		};
+	};
 
-	const getFileMetadata = (id: string) =>
-		drive.get(`drive/v3/files/${id}`).json<FileMetadata>();
+	const getFileMetadata = async (id: string) => {
+		const metadata = await drive
+			.get(`drive/v3/files/${id}`)
+			.json<FileMetadata>();
+		const e = e2();
+		if (e && metadata?.properties) {
+			return { ...metadata, properties: await e.decodeProperties(metadata.properties) };
+		}
+		return metadata;
+	};
+
+	/** What Drive says about one file right now: size, modified time, trashed. Read-only. */
+	const getFileStatus = async (id: string) =>
+		drive
+			.get(`drive/v3/files/${id}?fields=id,size,modifiedTime,trashed`)
+			.json<{
+				id: string;
+				size?: string;
+				modifiedTime?: string;
+				trashed?: boolean;
+			}>();
 
 	const idFromPath = async (path: string) => {
 		const files = await searchFiles({
@@ -413,8 +644,14 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}));
 	};
 
+	/**
+	 * Removes files from Drive. With "Delete to Trash" on (the default) they are moved to
+	 * the Drive Trash, where they stay recoverable (Drive empties the Trash after about 30
+	 * days); otherwise they are deleted permanently, exactly as before.
+	 */
 	const batchDelete = async (ids: string[]) => {
 		if (!ids.length) return true;
+		const trash = t.settings.deleteToTrash === true;
 
 		for (let offset = 0; offset < ids.length; offset += 100) {
 			const batch = ids.slice(offset, offset + 100);
@@ -427,8 +664,14 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 							'Content-Type: application/http',
 							`Content-ID: <request_${offset + index + 1}>`,
 							'',
-							`DELETE /drive/v3/files/${fileId} HTTP/1.1`,
-							'',
+							...(trash
+								? [
+										`PATCH /drive/v3/files/${fileId}?fields=id HTTP/1.1`,
+										'Content-Type: application/json',
+										'',
+										JSON.stringify({ trashed: true }),
+									]
+								: [`DELETE /drive/v3/files/${fileId} HTTP/1.1`, '']),
 						].join('\r\n'),
 					)
 					.concat(`--${boundary}--`)
@@ -447,17 +690,18 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 				result.matchAll(/HTTP\/1\.1 (\d{3})/g),
 				(match) => Number(match[1]),
 			);
+			// 404 means the file is already gone, which is exactly what a delete wants.
+			const failed = (status: number) =>
+				(status < 200 || status >= 300) && status !== 404;
 			if (
 				statuses.length !== batch.length ||
-				statuses.some((status) => status < 200 || status >= 300)
+				statuses.some(failed)
 			) {
-				const failedCount = statuses.filter(
-					(s) => s < 200 || s >= 300,
-				).length;
+				const failedCount = statuses.filter(failed).length;
 				t.diagnostics.record({
 					phase: 'batch-delete',
 					operation: 'batch-delete-files',
-					httpStatus: statuses.find((s) => s < 200 || s >= 300),
+					httpStatus: statuses.find(failed),
 					message: `${failedCount} of ${batch.length} batch deletes failed (statuses: ${statuses.join(', ')})`,
 				});
 				return;
@@ -505,6 +749,36 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		return result.changes;
 	};
 
+	/**
+	 * Ids of this vault's files that are in the Drive Trash. Used by Pull so that a file
+	 * trashed on another device is noticed even if the changes feed does not report it as
+	 * removed. Returns undefined when the listing fails (the caller treats that as "unknown").
+	 */
+	const listTrashedFileIds = async () => {
+		const query = encodeURIComponent(
+			"trashed=true and properties has { key='vault' and value='" +
+				escapeQueryValue(vaultValue()) +
+				"' }",
+		);
+		const ids: string[] = [];
+		let pageToken: string | undefined;
+		do {
+			const page = await drive
+				.get(
+					`drive/v3/files?fields=nextPageToken,files(id)&pageSize=1000&q=${query}${
+						pageToken
+							? '&pageToken=' + encodeURIComponent(pageToken)
+							: ''
+					}`,
+				)
+				.json<{ files?: { id: string }[]; nextPageToken?: string }>();
+			if (!page) return;
+			ids.push(...(page.files ?? []).map((file) => file.id));
+			pageToken = page.nextPageToken;
+		} while (pageToken);
+		return ids;
+	};
+
 	const deleteFilesMinimumOperations = async (files: TAbstractFile[]) => {
 		const folders = files.filter((file) => file instanceof TFolder);
 
@@ -536,15 +810,22 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		await Promise.all(files.map((file) => t.deleteFile(file)));
 	};
 
-	const getConfigFilesToSync = async () => {
+	/**
+	 * @param knownOnDrive paths that already exist on Drive. Given by Push: a theme or snippet that is
+	 *   not on Drive yet is uploaded even if it is old (they were not synced before 3.7.0).
+	 */
+	const getConfigFilesToSync = async (knownOnDrive?: Set<string>) => {
 		const configFilesToSync: string[] = [];
 		const { vault } = t.app;
 		const { adapter } = vault;
 
-		const [configFiles, plugins] = await Promise.all([
-			adapter.list(vault.configDir),
-			adapter.list(vault.configDir + '/plugins'),
-		]);
+		const none = { files: [] as string[], folders: [] as string[] };
+		const [configFiles, plugins] = isCategoryEnabled(t, 'settings')
+			? await Promise.all([
+					adapter.list(vault.configDir),
+					adapter.list(vault.configDir + '/plugins'),
+				])
+			: [none, none];
 
 		await Promise.all(
 			configFiles.files
@@ -561,28 +842,63 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 					}
 				})
 				.concat(
-					plugins.folders.map(async (plugin) => {
-						const files = await adapter.list(plugin);
-						await Promise.all(
-							files.files
-								.filter((path) =>
-									WHITELISTED_PLUGIN_FILES.includes(
-										fileNameFromPath(path),
-									),
-								)
-								.map(async (path) => {
-									const file = await adapter.stat(path);
-									if (
-										(file?.mtime || 0) >
-										t.settings.lastSyncedAt
-									) {
-										configFilesToSync.push(path);
-									}
-								}),
-						);
-					}),
+					plugins.folders
+						.filter((plugin) => !isOwnPluginPath(t, plugin))
+						.map(async (plugin) => {
+							const files = await adapter.list(plugin);
+							await Promise.all(
+								files.files
+									.filter((path) =>
+										WHITELISTED_PLUGIN_FILES.includes(
+											fileNameFromPath(path),
+										),
+									)
+									.map(async (path) => {
+										const file = await adapter.stat(path);
+										if (
+											(file?.mtime || 0) >
+											t.settings.lastSyncedAt
+										) {
+											configFilesToSync.push(path);
+										}
+									}),
+							);
+						}),
 				),
 		);
+
+		// Themes and snippets (switchable). A missing folder just means there is nothing to sync.
+		const listOrNothing = async (folder: string) => {
+			try {
+				return (await adapter.list(folder)) ?? none;
+			} catch {
+				return none;
+			}
+		};
+		const consider = async (path: string) => {
+			const file = await adapter.stat(path);
+			if (
+				(file?.mtime || 0) > t.settings.lastSyncedAt ||
+				(knownOnDrive !== undefined && !knownOnDrive.has(path))
+			) {
+				configFilesToSync.push(path);
+			}
+		};
+		if (isCategoryEnabled(t, 'themes')) {
+			const themes = await listOrNothing(vault.configDir + '/themes');
+			for (const theme of themes.folders) {
+				const inside = await listOrNothing(theme);
+				for (const path of inside.files) {
+					if (THEME_FILES.includes(fileNameFromPath(path))) await consider(path);
+				}
+			}
+		}
+		if (isCategoryEnabled(t, 'snippets')) {
+			const snippets = await listOrNothing(vault.configDir + '/snippets');
+			for (const path of snippets.files) {
+				if (path.toLowerCase().endsWith('.css')) await consider(path);
+			}
+		}
 
 		return configFilesToSync;
 	};
@@ -598,11 +914,13 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		deleteFile,
 		getFile,
 		getFileMetadata,
+		getFileStatus,
 		idFromPath,
 		idsFromPaths,
 		getChangesStartToken,
 		getChanges,
 		batchDelete,
+		listTrashedFileIds,
 		checkConnection,
 		deleteFilesMinimumOperations,
 		getConfigFilesToSync,
@@ -611,14 +929,37 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 export const checkConnection = async () => {
 	try {
-		const result = await requestUrl({
-			url: 'https://www.google.com/generate_204',
-			throw: false,
-		});
+		const result = await withTimeout(
+			requestUrl({
+				url: 'https://www.google.com/generate_204',
+				throw: false,
+			}),
+			net.probeTimeoutMs,
+		);
 		return result.status >= 200 && result.status < 300;
 	} catch {
 		return false;
 	}
+};
+
+/**
+ * Can this device reach Google's API servers (the ones Drive is on)? Any answer counts, even an
+ * error page: it proves the servers are reachable. Only a failed or timed-out request does not.
+ * It tells "no internet" apart from "Google is reachable but Drive is blocked" (firewall, VPN).
+ */
+export const checkDriveHost = async () => {
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			await withTimeout(
+				requestUrl({ url: 'https://www.googleapis.com/generate_204', throw: false }),
+				net.probeTimeoutMs,
+			);
+			return true;
+		} catch {
+			// try once more
+		}
+	}
+	return false;
 };
 
 export const batchAsync = async <T = unknown>(
@@ -628,7 +969,17 @@ export const batchAsync = async <T = unknown>(
 	const results = [];
 	for (let i = 0; i < requests.length; i += batchSize) {
 		const batch = requests.slice(i, i + batchSize);
-		results.push(...(await Promise.all(batch.map((request) => request()))));
+		// Wait for every request of the batch to finish before reporting a failure. A failed
+		// batch must not leave other requests running in the background: they would keep
+		// changing files and state after the caller has already reported the failure.
+		const settled = await Promise.allSettled(batch.map((request) => request()));
+		const failed = settled.find(
+			(result): result is PromiseRejectedResult => result.status === 'rejected',
+		);
+		if (failed) throw failed.reason;
+		results.push(
+			...settled.map((result) => (result as PromiseFulfilledResult<T>).value),
+		);
 	}
 	return results;
 };

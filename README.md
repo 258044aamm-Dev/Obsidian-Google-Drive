@@ -29,6 +29,10 @@ Upgrading from 3.1.x: it is safe to install over the existing plugin folder on o
 
 The full list of changes is in [CHANGELOG.md](CHANGELOG.md).
 
+## What is new in 3.13.3: the Drive check is on for new installs, every 3 minutes
+
+**Check Google Drive for waiting changes** (the number on the Pull icon) is now on from the start for a **new install**, and it asks every **3 minutes** instead of 15. Pick 1, 2, 3, 5, 10 or 15 minutes with the new **Check Google Drive every** setting. If you were already using the plugin, your choice is kept: it stays off unless you turned it on. Google cannot tell the plugin about a change by itself, so the plugin asks, quietly, and never during a sync.
+
 ## What is new in 3.13.2: no more false 403 from the Drive check
 
 Turning on **Check Google Drive for waiting changes** could show "HTTP 403 - Insufficient Google Drive permissions" even though everything was fine. The check forgot to sign in first. It now signs in like Pull and Push do. Nothing to change on your side.
@@ -69,7 +73,7 @@ The settings have a new **Ignore list**: one pattern per line for files and fold
 
 ## What is new in 3.9.0: counts on the ribbon icons
 
-The Push icon now shows a small number: how many changes are waiting on this device. If you turn on **Check Google Drive for waiting changes** in the settings, the Pull icon also shows how many changes are waiting on Google Drive (asked once at startup and every 15 minutes, never during a sync). Both can be switched off with **Show counts on the ribbon icons**. Nothing else changed.
+The Push icon now shows a small number: how many changes are waiting on this device. If you turn on **Check Google Drive for waiting changes** in the settings, the Pull icon also shows how many changes are waiting on Google Drive (asked once at startup and then every few minutes, 3 by default, never during a sync). Both can be switched off with **Show counts on the ribbon icons**. Nothing else changed.
 
 ## What is new in 3.8.3: Repair sync memory
 

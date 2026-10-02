@@ -4,6 +4,14 @@ All notable changes to this fork of [Obsidian Google Drive](https://github.com/R
 
 Releases: https://github.com/258044aamm-Dev/Obsidian-Google-Drive/releases
 
+## 3.13.3 - 2026-10-02
+
+### Changed
+- **The Drive check for waiting changes is on from the start for a new install.** "Check Google Drive for waiting changes" shows how many changes are waiting on Google Drive as a number on the Pull icon. A brand-new install now has it on. An install that was already in use keeps its choice, so nobody gets a new background request without asking: no saved value means it stays off, and a choice you made (on or off) is kept.
+- **The check now runs every 3 minutes instead of 15** (the first check still runs 10 seconds after Obsidian starts). A new setting, **Check Google Drive every**, lets you pick 1, 2, 3, 5, 10 or 15 minutes; the change applies at once. A shorter time shows changes sooner but uses a little more battery and mobile data. Anyone who already had the check on gets 3 minutes after the update and can pick 15 to get the old timing back.
+- Why the plugin has to ask and cannot be told: Google Drive can notify only a public web address, never an app on a phone or PC, so a quiet check is the only way without a server of your own.
+- Nothing else changed: the check still skips during a sync, while Obsidian is in the background, while offline, and before the first sync.
+
 ## 3.13.2 - 2026-10-01
 
 ### Fixed

@@ -2,7 +2,7 @@
  * Counts on the ribbon icons.
  *  - Push icon: the number of changes waiting on this device (the pending list). Costs nothing.
  *  - Pull icon (opt-in): the number of changes waiting on Google Drive. This needs a request to
- *    Drive, so it is only made at startup and then on a slow timer, never while a sync runs.
+ *    Drive, so it is made at startup and then on a timer (every 3 minutes unless changed), never while a sync runs.
  *
  * The number is a hint. Pull and Push still decide for themselves what to do.
  */
@@ -16,8 +16,15 @@ import { isOwnUpload } from './sync-state';
 import { refreshAccessToken } from './requests';
 import { addTrashedAsRemoved } from './trash';
 
-/** How often Drive is asked, once the opt-in check is on. */
-export const WAITING_CHECK_MS = 15 * 60 * 1000;
+/** The minutes the user can choose between checks of Drive, and the one used when nothing valid is chosen. */
+export const WAITING_CHECK_CHOICES = [1, 2, 3, 5, 10, 15];
+export const WAITING_CHECK_DEFAULT = 3;
+
+/** How often Drive is asked, once the check is on: the chosen minutes (a missing or invalid value gives 3). */
+export const waitingCheckMs = (chosen: unknown) => {
+	const minutes = Number(chosen);
+	return (WAITING_CHECK_CHOICES.includes(minutes) ? minutes : WAITING_CHECK_DEFAULT) * 60 * 1000;
+};
 
 /** `''` for nothing, the number up to 99, `99+` above. */
 export const badgeText = (count: number | undefined) =>

@@ -22,7 +22,7 @@ have at least one note open. Make a test vault copy if you are unsure.
 
 ## Counts
 - [ ] Settings → Advanced → "Check Google Drive for waiting changes" on. Change a file on another device and push.
-      Within 15 minutes (or after restarting Obsidian) the icon number goes up.
+      Within 3 minutes (the default, or the time chosen under "Check Google Drive every"; or after restarting Obsidian) the icon number goes up.
 - [ ] After Pull the number goes down to 0 and disappears.
 
 ## Drive web page (use a test file!)

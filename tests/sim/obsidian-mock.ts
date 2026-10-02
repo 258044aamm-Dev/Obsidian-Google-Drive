@@ -74,7 +74,12 @@ export class Menu {
 export const lastMenu: { current?: Menu } = {};
 export class App {}
 export class PluginSettingTab {
+	plugin: any;
 	update() {}
+	/** What the real settings page does first: store the value in the plugin's settings. */
+	async setControlValue(key: string, value: unknown) {
+		if (this.plugin?.settings) this.plugin.settings[key] = value;
+	}
 }
 export const setIcon = () => {};
 export const debounce = (fn: any) => fn; // immediate
